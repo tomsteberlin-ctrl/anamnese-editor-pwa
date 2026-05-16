@@ -1,0 +1,12 @@
+{
+  "name": "anamnese-editor-pwa",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "npx netlify dev",
+    "serve": "node scripts/local-server.mjs",
+    "check": "node --check public/app.js && node --check netlify/functions/api.mjs && node --check netlify/functions/_shared/github.mjs && node --check scripts/import-cases.mjs"
+  }
+}

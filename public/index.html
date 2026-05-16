@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#146c66">
+    <meta name="description" content="Interner Markdown-Editor für Anamneseberichte.">
+    <title>Anamnese Editor</title>
+    <link rel="manifest" href="./manifest.webmanifest">
+    <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <strong>Anamnese Editor</strong>
+          <span id="baseDir">GitHub-Speicher wird geladen</span>
+        </div>
+        <div class="toolbar">
+          <button id="installButton" type="button" hidden>Installieren</button>
+          <button id="reloadButton" type="button">Neu laden</button>
+          <button id="saveButton" type="button" class="primary">Speichern</button>
+        </div>
+      </header>
+
+      <aside class="sidebar" aria-label="Fall- und Dateiauswahl">
+        <section class="panel">
+          <label for="folderSearch">Fallordner mit Markdown suchen</label>
+          <input id="folderSearch" type="search" placeholder="Name, Tier, Datum">
+          <div id="folderList" class="listbox" role="listbox" aria-label="Fallordner mit Markdown-Dateien"></div>
+        </section>
+
+        <section class="panel files-panel">
+          <div class="panel-title">Markdown-Dateien</div>
+          <div id="fileList" class="listbox compact" role="listbox" aria-label="Markdown-Dateien"></div>
+        </section>
+      </aside>
+
+      <main class="workspace">
+        <section class="document-head">
+          <div>
+            <div class="caption">Aktive Datei</div>
+            <h1 id="activeFile">Keine Datei geöffnet</h1>
+            <div id="activePath" class="pathline"></div>
+          </div>
+          <div id="saveStatus" class="status idle">Bereit</div>
+        </section>
+
+        <section class="controls">
+          <div class="tabs" role="tablist" aria-label="Bearbeitungsmodus">
+            <button class="tab active" data-mode="edit" type="button">Text</button>
+            <button class="tab" data-mode="sections" type="button">Abschnitte</button>
+            <button class="tab" data-mode="preview" type="button">Vorschau</button>
+          </div>
+          <div class="findbar">
+            <input id="findInput" type="search" placeholder="Suchen">
+            <button id="findNextButton" type="button">Nächstes</button>
+            <input id="replaceInput" type="text" placeholder="Ersetzen durch">
+            <button id="replaceAllButton" type="button">Alles ersetzen</button>
+          </div>
+        </section>
+
+        <section id="editView" class="view active">
+          <textarea id="markdownEditor" spellcheck="true" placeholder="Wähle links einen Fallordner und eine Markdown-Datei."></textarea>
+        </section>
+
+        <section id="sectionsView" class="view split-view">
+          <nav id="sectionNav" class="section-nav" aria-label="Abschnitte"></nav>
+          <div id="sectionEditor" class="section-editor"></div>
+        </section>
+
+        <section id="previewView" class="view">
+          <article id="preview" class="preview"></article>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="conflictDialog">
+      <form method="dialog">
+        <h2>Datei wurde verändert</h2>
+        <p>Die Datei wurde seit dem Laden in GitHub geändert. Du kannst neu laden oder nach Prüfung erneut speichern.</p>
+        <div class="dialog-actions">
+          <button value="reload" type="submit">Neu laden</button>
+          <button value="cancel" type="submit">Abbrechen</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>
