@@ -278,12 +278,12 @@ export default async (req) => {
     const url = new URL(req.url);
     const path = url.pathname.replace(/\/$/, "");
 
-    if (req.method === "GET" && path === "/api/config") return handleConfig();
-    if (req.method === "GET" && path === "/api/cases") return handleCases(url);
-    if (req.method === "GET" && path === "/api/files") return handleFiles(url);
-    if (req.method === "GET" && path === "/api/file") return handleReadFile(url);
-    if (req.method === "POST" && path === "/api/file") return handleSaveFile(req);
-    if (req.method === "POST" && path === "/api/case") return handleCreateCase(req);
+    if (req.method === "GET" && path === "/api/config") return await handleConfig();
+    if (req.method === "GET" && path === "/api/cases") return await handleCases(url);
+    if (req.method === "GET" && path === "/api/files") return await handleFiles(url);
+    if (req.method === "GET" && path === "/api/file") return await handleReadFile(url);
+    if (req.method === "POST" && path === "/api/file") return await handleSaveFile(req);
+    if (req.method === "POST" && path === "/api/case") return await handleCreateCase(req);
 
     return json({ error: "Route nicht gefunden." }, 404);
   } catch (error) {
