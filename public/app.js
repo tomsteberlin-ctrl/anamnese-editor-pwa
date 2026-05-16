@@ -24,6 +24,7 @@ const el = {
   activePath: document.querySelector("#activePath"),
   saveStatus: document.querySelector("#saveStatus"),
   installButton: document.querySelector("#installButton"),
+  newCaseButton: document.querySelector("#newCaseButton"),
   reloadButton: document.querySelector("#reloadButton"),
   saveButton: document.querySelector("#saveButton"),
   tabs: document.querySelectorAll(".tab"),
@@ -38,6 +39,16 @@ const el = {
   sectionNav: document.querySelector("#sectionNav"),
   sectionEditor: document.querySelector("#sectionEditor"),
   preview: document.querySelector("#preview"),
+  newCaseDialog: document.querySelector("#newCaseDialog"),
+  newCaseForm: document.querySelector("#newCaseForm"),
+  newCaseDate: document.querySelector("#newCaseDate"),
+  newCaseOwner: document.querySelector("#newCaseOwner"),
+  newCaseAnimal: document.querySelector("#newCaseAnimal"),
+  newCaseSpecies: document.querySelector("#newCaseSpecies"),
+  newCaseTopic: document.querySelector("#newCaseTopic"),
+  newCaseTitle: document.querySelector("#newCaseTitle"),
+  newCaseRaw: document.querySelector("#newCaseRaw"),
+  cancelNewCaseButton: document.querySelector("#cancelNewCaseButton"),
   conflictDialog: document.querySelector("#conflictDialog"),
 };
 
@@ -78,6 +89,12 @@ function formatDate(value) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function todayInputValue() {
+  const date = new Date();
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 10);
 }
 
 function escapeHtml(text) {
@@ -305,6 +322,67 @@ async function saveFile() {
   }
 }
 
+function openNewCaseDialog() {
+  if (state.dirty && !window.confirm("Die aktuelle Datei ist nicht gespeichert. Trotzdem einen neuen Fall anlegen?")) {
+    return;
+  }
+  el.newCaseForm.reset();
+  el.newCaseDate.value = todayInputValue();
+  el.newCaseSpecies.value = "Pferd";
+  el.newCaseDialog.showModal();
+  el.newCaseOwner.focus();
+}
+
+async function createCase(event) {
+  event.preventDefault();
+  const submitButton = el.newCaseForm.querySelector('button[type="submit"]');
+  const payload = {
+    caseDate: el.newCaseDate.value,
+    owner: el.newCaseOwner.value.trim(),
+    animalName: el.newCaseAnimal.value.trim(),
+    species: el.newCaseSpecies.value.trim(),
+    topic: el.newCaseTopic.value.trim(),
+    title: el.newCaseTitle.value.trim(),
+    rawData: el.newCaseRaw.value.trim(),
+  };
+
+  if (!payload.rawData) {
+    el.newCaseRaw.focus();
+    setStatus("Rohdaten fehlen", "error");
+    return;
+  }
+
+  submitButton.disabled = true;
+  setStatus("Fall anlegen", "idle");
+
+  try {
+    const data = await requestJson("/api/case", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    el.newCaseDialog.close();
+    el.newCaseForm.reset();
+    state.files = [];
+    state.filePath = "";
+    await loadCases(el.folderSearch.value);
+    const createdCase = state.cases.find((item) => item.id === data.caseId) || {
+      id: data.caseId,
+      title: data.title,
+    };
+    await selectCase(createdCase);
+    await loadFile(data.openPath);
+    setMode("edit");
+    setStatus("Fall angelegt", "saved");
+  } catch (error) {
+    console.error(error);
+    setStatus("Fehler", "error");
+    window.alert(error.message);
+  } finally {
+    submitButton.disabled = false;
+  }
+}
+
 function showConflictDialog() {
   return new Promise((resolve) => {
     el.conflictDialog.addEventListener(
@@ -481,6 +559,9 @@ function registerServiceWorker() {
 }
 
 el.folderSearch.addEventListener("input", debouncedCaseSearch);
+el.newCaseButton.addEventListener("click", openNewCaseDialog);
+el.newCaseForm.addEventListener("submit", (event) => createCase(event).catch(showFatal));
+el.cancelNewCaseButton.addEventListener("click", () => el.newCaseDialog.close());
 
 el.markdownEditor.addEventListener("input", () => {
   state.content = el.markdownEditor.value;

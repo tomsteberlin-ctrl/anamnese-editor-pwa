@@ -1,5 +1,7 @@
 import {
   ClientError,
+  createFilesCommit,
+  directoryExists,
   getRepositoryConfig,
   listDirectory,
   normalizeCaseId,
@@ -31,6 +33,107 @@ function caseMatchesQuery(item, query) {
   return [item.id, item.title, item.sourceFolder]
     .filter(Boolean)
     .some((value) => String(value).toLowerCase().includes(needle));
+}
+
+function slugify(value, fallback = "fall") {
+  const slug = String(value || "")
+    .replace(/ä/g, "ae")
+    .replace(/ö/g, "oe")
+    .replace(/ü/g, "ue")
+    .replace(/Ä/g, "Ae")
+    .replace(/Ö/g, "Oe")
+    .replace(/Ü/g, "Ue")
+    .replace(/ß/g, "ss")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
+  return slug || fallback;
+}
+
+function normalizeCaseDate(value) {
+  const clean = String(value || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return clean;
+  return new Date().toISOString().slice(0, 10);
+}
+
+function shortDate(value) {
+  const [year, month, day] = normalizeCaseDate(value).split("-");
+  return `${year.slice(2)}${month}${day}`;
+}
+
+function buildTitle(body) {
+  const parts = [
+    body.caseDate ? shortDate(body.caseDate) : "",
+    body.owner,
+    body.species,
+    body.animalName,
+    body.topic,
+  ].filter((part) => String(part || "").trim());
+  return String(body.title || parts.join(" ") || "Neuer Fall").trim();
+}
+
+function buildTherapyTemplate({ title, owner, animalName, species, topic, caseDate }) {
+  const patientLine = [species, animalName].filter(Boolean).join(" ");
+  return `# Therapiekonzept - ${title}
+
+## Falluebersicht
+
+- Datum: ${caseDate}
+- Besitzer: ${owner || ""}
+- Tier: ${patientLine || ""}
+- Schwerpunkt: ${topic || ""}
+
+## Aktuelle Fragestellung
+
+
+## Anamnese und Symptome
+
+
+## Einschätzung
+
+
+## Therapieziele
+
+
+## Therapiekonzept
+
+### Mykotherapie
+
+
+### Fütterung und Management
+
+
+### Begleitende Maßnahmen
+
+
+## Verlaufskontrolle
+
+
+## Notizen
+
+`;
+}
+
+function buildRawDataContent(title, rawData) {
+  const content = String(rawData || "").trim();
+  return `# Rohdaten - ${title}
+
+${content}
+`;
+}
+
+async function buildUniqueCaseId(contentRoot, preferredBase) {
+  const base = slugify(preferredBase, "fall");
+  for (let index = 1; index <= 50; index += 1) {
+    const candidate = index === 1 ? base : `${base}-${index}`;
+    if (!(await directoryExists(`${contentRoot}/${candidate}`))) {
+      return candidate;
+    }
+  }
+  throw new ClientError("Kein freier Fallordner-Name gefunden.", 409);
 }
 
 async function handleConfig() {
@@ -108,6 +211,68 @@ async function handleSaveFile(req) {
   return json({ ok: true, ...result });
 }
 
+async function handleCreateCase(req) {
+  const { contentRoot } = getRepositoryConfig();
+  const body = await req.json().catch(() => {
+    throw new ClientError("Ungueltige JSON-Anfrage.");
+  });
+
+  const rawData = String(body.rawData || "").trim();
+  if (!rawData) {
+    throw new ClientError("Rohdaten fehlen.");
+  }
+
+  const caseDate = normalizeCaseDate(body.caseDate);
+  const title = buildTitle({ ...body, caseDate });
+  const owner = String(body.owner || "").trim();
+  const animalName = String(body.animalName || "").trim();
+  const species = String(body.species || "").trim();
+  const topic = String(body.topic || "").trim();
+  const slugBase = `${shortDate(caseDate)} ${owner} ${species} ${animalName} ${topic}`.trim() || title;
+  const caseId = await buildUniqueCaseId(contentRoot, slugBase);
+  const casePath = `${contentRoot}/${caseId}`;
+  const now = new Date().toISOString();
+  const conceptContent = buildTherapyTemplate({ title, owner, animalName, species, topic, caseDate });
+  const rohdatenContent = buildRawDataContent(title, rawData);
+  const meta = {
+    id: caseId,
+    title,
+    owner,
+    animalName,
+    species,
+    topic,
+    caseDate,
+    source: "anamnese-editor-pwa",
+    importedAt: now,
+    updatedAt: now,
+    files: [
+      { name: "anamnesekonzept.md", sourceName: "App-Vorlage", bytes: Buffer.byteLength(conceptContent, "utf8") },
+      { name: "rohdaten.md", sourceName: "App-Eingabe", bytes: Buffer.byteLength(rohdatenContent, "utf8") },
+    ],
+  };
+
+  const result = await createFilesCommit(
+    [
+      { path: `${casePath}/anamnesekonzept.md`, content: conceptContent },
+      { path: `${casePath}/rohdaten.md`, content: rohdatenContent },
+      { path: `${casePath}/meta.json`, content: `${JSON.stringify(meta, null, 2)}\n` },
+    ],
+    `Create ${caseId} via Anamnese Editor`,
+  );
+
+  return json({
+    ok: true,
+    caseId,
+    title,
+    openPath: `${casePath}/anamnesekonzept.md`,
+    files: [
+      `${casePath}/anamnesekonzept.md`,
+      `${casePath}/rohdaten.md`,
+    ],
+    ...result,
+  }, 201);
+}
+
 export default async (req) => {
   try {
     const url = new URL(req.url);
@@ -118,6 +283,7 @@ export default async (req) => {
     if (req.method === "GET" && path === "/api/files") return handleFiles(url);
     if (req.method === "GET" && path === "/api/file") return handleReadFile(url);
     if (req.method === "POST" && path === "/api/file") return handleSaveFile(req);
+    if (req.method === "POST" && path === "/api/case") return handleCreateCase(req);
 
     return json({ error: "Route nicht gefunden." }, 404);
   } catch (error) {
@@ -131,5 +297,5 @@ export default async (req) => {
 };
 
 export const config = {
-  path: ["/api/config", "/api/cases", "/api/files", "/api/file"],
+  path: ["/api/config", "/api/cases", "/api/files", "/api/file", "/api/case"],
 };

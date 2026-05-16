@@ -120,6 +120,16 @@ export async function listDirectory(repoPath) {
   return data;
 }
 
+export async function directoryExists(repoPath) {
+  try {
+    await listDirectory(repoPath);
+    return true;
+  } catch (error) {
+    if (error.status === 404) return false;
+    throw error;
+  }
+}
+
 export async function readJsonFile(repoPath) {
   const { owner, repo, branch } = getRepositoryConfig();
   ensureSafeParts(repoPath);
@@ -180,5 +190,60 @@ export async function updateMarkdownFile(repoPath, content, sha) {
     sha: data.content?.sha || "",
     commitSha: data.commit?.sha || "",
     htmlUrl: data.commit?.html_url || "",
+  };
+}
+
+export async function createFilesCommit(files, message) {
+  const { owner, repo, branch } = getRepositoryConfig();
+  const ref = await githubRequest(`/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(branch)}`);
+  const parentSha = ref.object?.sha;
+  if (!parentSha) {
+    throw new ClientError("GitHub-Branch konnte nicht gelesen werden.", 500);
+  }
+
+  const parentCommit = await githubRequest(`/repos/${owner}/${repo}/git/commits/${parentSha}`);
+  const baseTreeSha = parentCommit.tree?.sha;
+  if (!baseTreeSha) {
+    throw new ClientError("GitHub-Baum konnte nicht gelesen werden.", 500);
+  }
+
+  const tree = files.map((file) => {
+    const cleanPath = String(file.path || "").replaceAll("\\", "/").trim().replace(/^\/+/, "");
+    ensureSafeParts(cleanPath);
+    return {
+      path: cleanPath,
+      mode: "100644",
+      type: "blob",
+      content: String(file.content ?? ""),
+    };
+  });
+
+  const nextTree = await githubRequest(`/repos/${owner}/${repo}/git/trees`, {
+    method: "POST",
+    body: {
+      base_tree: baseTreeSha,
+      tree,
+    },
+  });
+
+  const nextCommit = await githubRequest(`/repos/${owner}/${repo}/git/commits`, {
+    method: "POST",
+    body: {
+      message,
+      tree: nextTree.sha,
+      parents: [parentSha],
+    },
+  });
+
+  await githubRequest(`/repos/${owner}/${repo}/git/refs/heads/${encodeURIComponent(branch)}`, {
+    method: "PATCH",
+    body: {
+      sha: nextCommit.sha,
+    },
+  });
+
+  return {
+    commitSha: nextCommit.sha,
+    htmlUrl: nextCommit.html_url || "",
   };
 }

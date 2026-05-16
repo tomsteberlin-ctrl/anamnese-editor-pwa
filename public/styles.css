@@ -68,7 +68,8 @@ button.primary:hover {
 }
 
 input[type="search"],
-input[type="text"] {
+input[type="text"],
+input[type="date"] {
   width: 100%;
   min-height: 36px;
   border: 1px solid var(--line);
@@ -475,8 +476,48 @@ dialog {
   box-shadow: var(--shadow);
 }
 
+dialog::backdrop {
+  background: rgba(31, 37, 40, 0.28);
+}
+
+.wide-dialog {
+  width: min(760px, calc(100vw - 32px));
+  max-width: 760px;
+}
+
 dialog h2 {
   margin-top: 0;
+}
+
+.case-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.case-form label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.case-form .full-span {
+  grid-column: 1 / -1;
+}
+
+.case-form textarea {
+  width: 100%;
+  min-height: 240px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px;
+  color: var(--text);
+  line-height: 1.5;
 }
 
 .dialog-actions {
@@ -543,5 +584,9 @@ dialog h2 {
   .tab {
     width: 100%;
     max-width: none;
+  }
+
+  .case-form {
+    grid-template-columns: 1fr;
   }
 }

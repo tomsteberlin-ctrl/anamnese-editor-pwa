@@ -8,7 +8,7 @@
     <title>Anamnese Editor</title>
     <link rel="manifest" href="./manifest.webmanifest">
     <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="./styles.css">
+    <link rel="stylesheet" href="./styles.css?v=20260516-newcase">
   </head>
   <body>
     <div class="app-shell">
@@ -19,6 +19,7 @@
         </div>
         <div class="toolbar">
           <button id="installButton" type="button" hidden>Installieren</button>
+          <button id="newCaseButton" type="button">Neuer Fall</button>
           <button id="reloadButton" type="button">Neu laden</button>
           <button id="saveButton" type="button" class="primary">Speichern</button>
         </div>
@@ -76,6 +77,46 @@
       </main>
     </div>
 
+    <dialog id="newCaseDialog" class="wide-dialog">
+      <form id="newCaseForm">
+        <h2>Neuen Fall anlegen</h2>
+        <div class="case-form">
+          <label>
+            Datum
+            <input id="newCaseDate" name="caseDate" type="date" required>
+          </label>
+          <label>
+            Besitzer
+            <input id="newCaseOwner" name="owner" type="text" autocomplete="off">
+          </label>
+          <label>
+            Tiername
+            <input id="newCaseAnimal" name="animalName" type="text" autocomplete="off">
+          </label>
+          <label>
+            Tierart
+            <input id="newCaseSpecies" name="species" type="text" autocomplete="off">
+          </label>
+          <label class="full-span">
+            Schwerpunkt
+            <input id="newCaseTopic" name="topic" type="text" autocomplete="off" placeholder="z. B. Asthma, EOTRH, Arthrose">
+          </label>
+          <label class="full-span">
+            Titel
+            <input id="newCaseTitle" name="title" type="text" autocomplete="off">
+          </label>
+          <label class="full-span">
+            Rohdaten
+            <textarea id="newCaseRaw" name="rawData" required placeholder="Rohdaten hier einfuegen"></textarea>
+          </label>
+        </div>
+        <div class="dialog-actions">
+          <button value="cancel" type="button" id="cancelNewCaseButton">Abbrechen</button>
+          <button type="submit" class="primary">Fall anlegen</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="conflictDialog">
       <form method="dialog">
         <h2>Datei wurde verändert</h2>
@@ -87,6 +128,6 @@
       </form>
     </dialog>
 
-    <script src="./app.js" type="module"></script>
+    <script src="./app.js?v=20260516-newcase" type="module"></script>
   </body>
 </html>
