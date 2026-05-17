@@ -16,6 +16,10 @@ const JSON_HEADERS = {
   "Cache-Control": "no-store",
 };
 
+function readEnv(name) {
+  return globalThis.Netlify?.env?.get?.(name) || process.env[name] || "";
+}
+
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -134,6 +138,81 @@ async function buildUniqueCaseId(contentRoot, preferredBase) {
     }
   }
   throw new ClientError("Kein freier Fallordner-Name gefunden.", 409);
+}
+
+function getAiConfig() {
+  const apiKey = readEnv("OPENAI_API_KEY").trim();
+  const model = readEnv("OPENAI_MODEL").trim() || "gpt-5.4-mini";
+  const baseUrl = readEnv("OPENAI_BASE_URL").trim() || "https://api.openai.com/v1";
+
+  if (!apiKey) {
+    throw new ClientError("OpenAI ist nicht konfiguriert: OPENAI_API_KEY fehlt.", 500);
+  }
+
+  return {
+    apiKey,
+    model,
+    baseUrl: baseUrl.replace(/\/+$/, ""),
+  };
+}
+
+function extractResponseText(responseBody) {
+  if (typeof responseBody.output_text === "string") {
+    return responseBody.output_text.trim();
+  }
+
+  const chunks = [];
+  for (const item of responseBody.output || []) {
+    for (const content of item.content || []) {
+      if (content.type === "output_text" && content.text) {
+        chunks.push(content.text);
+      }
+    }
+  }
+
+  return chunks.join("\n").trim();
+}
+
+function buildDraftInstructions() {
+  return `Du bist eine deutschsprachige Fachassistenz fuer tierheilkundliche Anamnese- und Therapiekonzepte.
+
+Aufgabe: Erstelle aus Rohdaten einen sorgfaeltigen Markdown-Entwurf fuer ein Therapiekonzept, der in einer Beratung fachlich weiterbearbeitet wird.
+
+Regeln:
+- Schreibe klar, strukturiert und professionell auf Deutsch.
+- Erfinde keine Diagnosen, Laborwerte, Dosierungen, Befunde, Medikamente oder Kontraindikationen.
+- Kennzeichne Unsicherheiten und offene Punkte explizit.
+- Priorisiere die aktuellen Hauptprobleme und trenne Beobachtung, Interpretation und Empfehlung.
+- Behalte vorhandene patientenbezogene Fakten exakt bei.
+- Formuliere nicht als rechtlich bindende tieraerztliche Diagnose, sondern als beratender Konzeptentwurf.
+- Nutze Markdown mit sinnvollen Ueberschriften.
+- Gib nur den Markdown-Entwurf aus, ohne Vorrede.`;
+}
+
+function buildDraftInput({ caseId, title, rawData, currentConcept }) {
+  return `Fall-ID: ${caseId}
+Titel: ${title || caseId}
+
+Gewuenschte Grundstruktur:
+# Therapiekonzept - ${title || caseId}
+
+## Falluebersicht
+## Relevante Anamnese
+## Aktuelle Problempriorisierung
+## Einschätzung
+## Therapieziele
+## Therapiekonzept
+### Mykotherapie
+### Fütterung und Management
+### Begleitende Maßnahmen
+## Verlaufskontrolle
+## Offene Fragen
+
+Bestehender Konzeptstand, falls vorhanden:
+${currentConcept || "(leer)"}
+
+Rohdaten:
+${rawData}`;
 }
 
 async function handleConfig() {
@@ -273,6 +352,82 @@ async function handleCreateCase(req) {
   }, 201);
 }
 
+async function handleGenerateDraft(req) {
+  const { contentRoot } = getRepositoryConfig();
+  const body = await req.json().catch(() => {
+    throw new ClientError("Ungueltige JSON-Anfrage.");
+  });
+
+  const caseId = normalizeCaseId(body.caseId);
+  const files = await listDirectory(`${contentRoot}/${caseId}`);
+  const markdownFiles = files.filter((item) => item.type === "file" && item.name.toLowerCase().endsWith(".md"));
+  const rawFile = markdownFiles.find((file) => file.name.toLowerCase() === "rohdaten.md")
+    || markdownFiles.find((file) => file.name.toLowerCase().includes("rohdaten"));
+  const conceptFile = markdownFiles.find((file) => file.name.toLowerCase() === "anamnesekonzept.md")
+    || markdownFiles.find((file) => file.name.toLowerCase().includes("konzept"));
+
+  if (!rawFile) {
+    throw new ClientError("Keine rohdaten.md fuer diesen Fall gefunden.");
+  }
+  if (!conceptFile) {
+    throw new ClientError("Keine anamnesekonzept.md fuer diesen Fall gefunden.");
+  }
+
+  const meta = (await readJsonFile(`${contentRoot}/${caseId}/meta.json`)) || {};
+  const rawData = await readMarkdownFile(rawFile.path);
+  const currentConcept = await readMarkdownFile(conceptFile.path);
+  const { apiKey, model, baseUrl } = getAiConfig();
+  const input = buildDraftInput({
+    caseId,
+    title: meta.title || caseId,
+    rawData: rawData.content,
+    currentConcept: currentConcept.content,
+  });
+
+  const response = await fetch(`${baseUrl}/responses`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json; charset=utf-8",
+    },
+    body: JSON.stringify({
+      model,
+      instructions: buildDraftInstructions(),
+      input,
+      max_output_tokens: 12000,
+      store: false,
+    }),
+  });
+
+  const responseText = await response.text();
+  let responseBody = {};
+  if (responseText) {
+    try {
+      responseBody = JSON.parse(responseText);
+    } catch {
+      responseBody = { error: { message: responseText } };
+    }
+  }
+
+  if (!response.ok) {
+    throw new ClientError(responseBody.error?.message || `OpenAI Fehler ${response.status}`, response.status);
+  }
+
+  const content = extractResponseText(responseBody);
+  if (!content) {
+    throw new ClientError("Die KI hat keinen Textentwurf geliefert.", 502);
+  }
+
+  return json({
+    ok: true,
+    model,
+    caseId,
+    sourcePath: rawFile.path,
+    targetPath: conceptFile.path,
+    content,
+  });
+}
+
 export default async (req) => {
   try {
     const url = new URL(req.url);
@@ -284,6 +439,7 @@ export default async (req) => {
     if (req.method === "GET" && path === "/api/file") return await handleReadFile(url);
     if (req.method === "POST" && path === "/api/file") return await handleSaveFile(req);
     if (req.method === "POST" && path === "/api/case") return await handleCreateCase(req);
+    if (req.method === "POST" && path === "/api/draft") return await handleGenerateDraft(req);
 
     return json({ error: "Route nicht gefunden." }, 404);
   } catch (error) {
@@ -297,5 +453,5 @@ export default async (req) => {
 };
 
 export const config = {
-  path: ["/api/config", "/api/cases", "/api/files", "/api/file", "/api/case"],
+  path: ["/api/config", "/api/cases", "/api/files", "/api/file", "/api/case", "/api/draft"],
 };

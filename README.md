@@ -19,6 +19,8 @@ GITHUB_REPO=beratung-markdown-content
 GITHUB_BRANCH=main
 GITHUB_TOKEN=<token-mit-zugriff-auf-content-repo>
 CONTENT_ROOT=cases
+OPENAI_API_KEY=<serverseitiger-openai-api-key>
+OPENAI_MODEL=gpt-5.4-mini
 ```
 
 ## Entwicklung

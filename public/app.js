@@ -25,6 +25,7 @@ const el = {
   saveStatus: document.querySelector("#saveStatus"),
   installButton: document.querySelector("#installButton"),
   newCaseButton: document.querySelector("#newCaseButton"),
+  aiDraftButton: document.querySelector("#aiDraftButton"),
   reloadButton: document.querySelector("#reloadButton"),
   saveButton: document.querySelector("#saveButton"),
   tabs: document.querySelectorAll(".tab"),
@@ -383,6 +384,42 @@ async function createCase(event) {
   }
 }
 
+async function generateAiDraft() {
+  if (!state.caseId) {
+    setStatus("Kein Fall gewählt", "error");
+    window.alert("Bitte zuerst links einen Fall auswählen.");
+    return;
+  }
+
+  if (state.dirty && !window.confirm("Ungespeicherte Änderungen werden durch den KI-Entwurf überschrieben. Trotzdem fortfahren?")) {
+    return;
+  }
+
+  el.aiDraftButton.disabled = true;
+  setStatus("KI arbeitet", "idle");
+
+  try {
+    const data = await requestJson("/api/draft", {
+      method: "POST",
+      body: JSON.stringify({ caseId: state.caseId }),
+    });
+
+    await loadFile(data.targetPath);
+    state.content = data.content;
+    syncEditorFromState();
+    if (state.mode === "sections") renderSections();
+    setMode("edit");
+    markDirty(true);
+    setStatus("KI-Entwurf bereit", "dirty");
+  } catch (error) {
+    console.error(error);
+    setStatus("KI-Fehler", "error");
+    window.alert(error.message);
+  } finally {
+    el.aiDraftButton.disabled = false;
+  }
+}
+
 function showConflictDialog() {
   return new Promise((resolve) => {
     el.conflictDialog.addEventListener(
@@ -560,6 +597,7 @@ function registerServiceWorker() {
 
 el.folderSearch.addEventListener("input", debouncedCaseSearch);
 el.newCaseButton.addEventListener("click", openNewCaseDialog);
+el.aiDraftButton.addEventListener("click", () => generateAiDraft().catch(showFatal));
 el.newCaseForm.addEventListener("submit", (event) => createCase(event).catch(showFatal));
 el.cancelNewCaseButton.addEventListener("click", () => el.newCaseDialog.close());
 
