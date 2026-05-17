@@ -25,6 +25,7 @@ const el = {
   saveStatus: document.querySelector("#saveStatus"),
   installButton: document.querySelector("#installButton"),
   newCaseButton: document.querySelector("#newCaseButton"),
+  codexBriefingButton: document.querySelector("#codexBriefingButton"),
   aiDraftButton: document.querySelector("#aiDraftButton"),
   reloadButton: document.querySelector("#reloadButton"),
   saveButton: document.querySelector("#saveButton"),
@@ -384,6 +385,45 @@ async function createCase(event) {
   }
 }
 
+async function prepareCodexBriefing() {
+  if (!state.caseId) {
+    setStatus("Kein Fall gewaehlt", "error");
+    window.alert("Bitte zuerst links einen Fall auswaehlen.");
+    return;
+  }
+
+  if (state.dirty && !window.confirm("Ungespeicherte Aenderungen werden nicht ins Codex-Briefing uebernommen. Trotzdem fortfahren?")) {
+    return;
+  }
+
+  el.codexBriefingButton.disabled = true;
+  setStatus("Briefing erstellen", "idle");
+
+  try {
+    const data = await requestJson("/api/briefing", {
+      method: "POST",
+      body: JSON.stringify({ caseId: state.caseId }),
+    });
+
+    state.dirty = false;
+    await loadCases(el.folderSearch.value);
+    const currentCase = state.cases.find((item) => item.id === data.caseId) || {
+      id: data.caseId,
+      title: state.caseName,
+    };
+    await selectCase(currentCase);
+    await loadFile(data.path);
+    setMode("edit");
+    setStatus("Briefing bereit", "saved");
+  } catch (error) {
+    console.error(error);
+    setStatus("Fehler", "error");
+    window.alert(error.message);
+  } finally {
+    el.codexBriefingButton.disabled = false;
+  }
+}
+
 async function generateAiDraft() {
   if (!state.caseId) {
     setStatus("Kein Fall gewählt", "error");
@@ -597,6 +637,7 @@ function registerServiceWorker() {
 
 el.folderSearch.addEventListener("input", debouncedCaseSearch);
 el.newCaseButton.addEventListener("click", openNewCaseDialog);
+el.codexBriefingButton.addEventListener("click", () => prepareCodexBriefing().catch(showFatal));
 el.aiDraftButton.addEventListener("click", () => generateAiDraft().catch(showFatal));
 el.newCaseForm.addEventListener("submit", (event) => createCase(event).catch(showFatal));
 el.cancelNewCaseButton.addEventListener("click", () => el.newCaseDialog.close());

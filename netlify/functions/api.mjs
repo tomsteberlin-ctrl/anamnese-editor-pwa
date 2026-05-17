@@ -215,6 +215,103 @@ Rohdaten:
 ${rawData}`;
 }
 
+function findCaseMarkdownFiles(markdownFiles) {
+  const rawFile = markdownFiles.find((file) => file.name.toLowerCase() === "rohdaten.md")
+    || markdownFiles.find((file) => file.name.toLowerCase().includes("rohdaten"));
+  const conceptFile = markdownFiles.find((file) => file.name.toLowerCase() === "anamnesekonzept.md")
+    || markdownFiles.find((file) => file.name.toLowerCase().includes("konzept"));
+
+  return { rawFile, conceptFile };
+}
+
+async function readCaseContext(caseId) {
+  const { contentRoot } = getRepositoryConfig();
+  const files = await listDirectory(`${contentRoot}/${caseId}`);
+  const markdownFiles = files.filter((item) => item.type === "file" && item.name.toLowerCase().endsWith(".md"));
+  const { rawFile, conceptFile } = findCaseMarkdownFiles(markdownFiles);
+
+  if (!rawFile) {
+    throw new ClientError("Keine rohdaten.md fuer diesen Fall gefunden.");
+  }
+  if (!conceptFile) {
+    throw new ClientError("Keine anamnesekonzept.md fuer diesen Fall gefunden.");
+  }
+
+  const meta = (await readJsonFile(`${contentRoot}/${caseId}/meta.json`)) || {};
+  const rawData = await readMarkdownFile(rawFile.path);
+  const currentConcept = await readMarkdownFile(conceptFile.path);
+
+  return {
+    contentRoot,
+    meta,
+    files,
+    markdownFiles,
+    rawFile,
+    conceptFile,
+    rawData,
+    currentConcept,
+  };
+}
+
+function buildCodexBriefing({ caseId, meta, files, rawFile, conceptFile, rawData, currentConcept }) {
+  const title = meta.title || caseId;
+  const now = new Date().toISOString();
+  const fileList = files
+    .map((file) => `- ${file.name} (${file.type}, ${file.path})`)
+    .join("\n");
+  const patient = [meta.species, meta.animalName].filter(Boolean).join(" ");
+
+  return `# Codex-Briefing - ${title}
+
+## Auftrag
+
+Bitte diesen Fall fachlich bearbeiten und die Datei \`${conceptFile.path}\` aktualisieren.
+
+Ziel ist ein hochwertiges deutschsprachiges Anamnese- und Therapiekonzept mit besonderem Fokus auf:
+- individuelle Problempriorisierung
+- Vitalpilz-Konzept mit nachvollziehbarer therapeutischer Logik
+- Ernaehrung, Haltung/Management und begleitende Massnahmen
+- Risiken, Kontraindikationen, offene Fragen und Verlaufskontrolle
+- klare Trennung von Rohdaten, Interpretation und Empfehlung
+
+Wichtig:
+- Keine Fakten, Diagnosen, Laborwerte oder Medikamente erfinden.
+- Unsicherheiten und Rueckfragen sichtbar machen.
+- Bestehende Korrekturen im Konzept beachten.
+- Ergebnis direkt in \`${conceptFile.path}\` speichern.
+
+## Fall
+
+- Fall-ID: ${caseId}
+- Titel: ${title}
+- Besitzer: ${meta.owner || ""}
+- Tier: ${patient}
+- Schwerpunkt: ${meta.topic || ""}
+- Falldatum: ${meta.caseDate || ""}
+- Briefing erstellt: ${now}
+
+## Relevante Dateien
+
+${fileList}
+
+## Rohdatenquelle
+
+${rawFile.path}
+
+## Zieldatei
+
+${conceptFile.path}
+
+## Aktueller Konzeptstand
+
+${currentConcept.content || "(leer)"}
+
+## Rohdaten
+
+${rawData.content}
+`;
+}
+
 async function handleConfig() {
   const { owner, repo, branch, contentRoot } = getRepositoryConfig();
   return json({
@@ -353,29 +450,12 @@ async function handleCreateCase(req) {
 }
 
 async function handleGenerateDraft(req) {
-  const { contentRoot } = getRepositoryConfig();
   const body = await req.json().catch(() => {
     throw new ClientError("Ungueltige JSON-Anfrage.");
   });
 
   const caseId = normalizeCaseId(body.caseId);
-  const files = await listDirectory(`${contentRoot}/${caseId}`);
-  const markdownFiles = files.filter((item) => item.type === "file" && item.name.toLowerCase().endsWith(".md"));
-  const rawFile = markdownFiles.find((file) => file.name.toLowerCase() === "rohdaten.md")
-    || markdownFiles.find((file) => file.name.toLowerCase().includes("rohdaten"));
-  const conceptFile = markdownFiles.find((file) => file.name.toLowerCase() === "anamnesekonzept.md")
-    || markdownFiles.find((file) => file.name.toLowerCase().includes("konzept"));
-
-  if (!rawFile) {
-    throw new ClientError("Keine rohdaten.md fuer diesen Fall gefunden.");
-  }
-  if (!conceptFile) {
-    throw new ClientError("Keine anamnesekonzept.md fuer diesen Fall gefunden.");
-  }
-
-  const meta = (await readJsonFile(`${contentRoot}/${caseId}/meta.json`)) || {};
-  const rawData = await readMarkdownFile(rawFile.path);
-  const currentConcept = await readMarkdownFile(conceptFile.path);
+  const { meta, rawFile, conceptFile, rawData, currentConcept } = await readCaseContext(caseId);
   const { apiKey, model, baseUrl } = getAiConfig();
   const input = buildDraftInput({
     caseId,
@@ -428,6 +508,45 @@ async function handleGenerateDraft(req) {
   });
 }
 
+async function handleCreateBriefing(req) {
+  const body = await req.json().catch(() => {
+    throw new ClientError("Ungueltige JSON-Anfrage.");
+  });
+
+  const caseId = normalizeCaseId(body.caseId);
+  const {
+    contentRoot,
+    meta,
+    files,
+    rawFile,
+    conceptFile,
+    rawData,
+    currentConcept,
+  } = await readCaseContext(caseId);
+  const content = buildCodexBriefing({
+    caseId,
+    meta,
+    files,
+    rawFile,
+    conceptFile,
+    rawData,
+    currentConcept,
+  });
+  const path = `${contentRoot}/${caseId}/codex-briefing.md`;
+  const result = await createFilesCommit(
+    [{ path, content }],
+    `Prepare ${caseId} for Codex`,
+  );
+
+  return json({
+    ok: true,
+    caseId,
+    path,
+    contentLength: content.length,
+    ...result,
+  });
+}
+
 export default async (req) => {
   try {
     const url = new URL(req.url);
@@ -440,6 +559,7 @@ export default async (req) => {
     if (req.method === "POST" && path === "/api/file") return await handleSaveFile(req);
     if (req.method === "POST" && path === "/api/case") return await handleCreateCase(req);
     if (req.method === "POST" && path === "/api/draft") return await handleGenerateDraft(req);
+    if (req.method === "POST" && path === "/api/briefing") return await handleCreateBriefing(req);
 
     return json({ error: "Route nicht gefunden." }, 404);
   } catch (error) {
@@ -453,5 +573,5 @@ export default async (req) => {
 };
 
 export const config = {
-  path: ["/api/config", "/api/cases", "/api/files", "/api/file", "/api/case", "/api/draft"],
+  path: ["/api/config", "/api/cases", "/api/files", "/api/file", "/api/case", "/api/draft", "/api/briefing"],
 };
