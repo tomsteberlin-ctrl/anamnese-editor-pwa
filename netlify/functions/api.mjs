@@ -398,13 +398,76 @@ async function handleReadFile(url) {
   return json(file);
 }
 
+function getCaseInfoFromMarkdownPath(filePath) {
+  const { contentRoot } = getRepositoryConfig({ allowMissingToken: true });
+  const parts = String(filePath || "").split("/");
+  if (parts.length < 3 || parts[0] !== contentRoot) {
+    return null;
+  }
+  return {
+    caseId: parts[1],
+    casePath: `${contentRoot}/${parts[1]}`,
+    fileName: parts.at(-1),
+  };
+}
+
+async function touchCaseMetadata(filePath, content) {
+  const info = getCaseInfoFromMarkdownPath(filePath);
+  if (!info) return null;
+
+  const metaPath = `${info.casePath}/meta.json`;
+  const meta = await readJsonFile(metaPath);
+  if (!meta) return null;
+
+  const now = new Date().toISOString();
+  const files = Array.isArray(meta.files) ? [...meta.files] : [];
+  const bytes = Buffer.byteLength(String(content ?? ""), "utf8");
+  const index = files.findIndex((file) => file?.name === info.fileName);
+  const nextFile = {
+    ...(index >= 0 ? files[index] : {}),
+    name: info.fileName,
+    bytes,
+    updatedAt: now,
+  };
+
+  if (index >= 0) {
+    files[index] = nextFile;
+  } else {
+    files.push(nextFile);
+  }
+
+  const nextMeta = {
+    ...meta,
+    updatedAt: now,
+    files,
+  };
+
+  const result = await createFilesCommit(
+    [{ path: metaPath, content: `${JSON.stringify(nextMeta, null, 2)}\n` }],
+    `Update ${info.caseId} metadata via Anamnese Editor`,
+  );
+
+  return {
+    updatedAt: now,
+    metaCommitSha: result.commitSha,
+  };
+}
+
 async function handleSaveFile(req) {
   const body = await req.json().catch(() => {
     throw new ClientError("Ungueltige JSON-Anfrage.");
   });
   const filePath = normalizeMarkdownPath(body.path);
   const result = await updateMarkdownFile(filePath, body.content, body.sha);
-  return json({ ok: true, ...result });
+  let metadata = null;
+
+  try {
+    metadata = await touchCaseMetadata(filePath, body.content);
+  } catch (error) {
+    console.warn("Fall-Metadaten konnten nicht aktualisiert werden.", error);
+  }
+
+  return json({ ok: true, ...result, metadata });
 }
 
 async function handleCreateCase(req) {

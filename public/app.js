@@ -64,9 +64,17 @@ const debounce = (fn, delay = 250) => {
 };
 
 async function requestJson(url, options = {}) {
-  const response = await fetch(url, {
+  const method = options.method || "GET";
+  const requestUrl = new URL(url, window.location.origin);
+  if (method.toUpperCase() === "GET") {
+    requestUrl.searchParams.set("_ts", String(Date.now()));
+  }
+
+  const response = await fetch(requestUrl, {
+    cache: "no-store",
     headers: { "Content-Type": "application/json; charset=utf-8" },
     ...options,
+    method,
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -312,6 +320,66 @@ async function loadFile(filePath) {
   markDirty(false);
 }
 
+async function refreshActiveCase() {
+  if (state.dirty && !window.confirm("Ungespeicherte Änderungen verwerfen und aktuellen Stand neu laden?")) {
+    return;
+  }
+
+  const activeCaseId = state.caseId;
+  const activeFilePath = state.filePath;
+
+  setStatus("Aktualisieren", "idle");
+  await loadConfig();
+  await loadCases(el.folderSearch.value);
+
+  if (!activeCaseId) {
+    setStatus("Fallliste aktualisiert", "saved");
+    return;
+  }
+
+  const currentCase = state.cases.find((item) => item.id === activeCaseId);
+  if (!currentCase) {
+    clearActiveCase();
+    setStatus("Fall nicht gefunden", "error");
+    window.alert("Der aktive Fall wurde im Content-Speicher nicht gefunden. Die Fallliste wurde aktualisiert.");
+    return;
+  }
+
+  state.caseId = currentCase.id;
+  state.caseName = currentCase.title || currentCase.id;
+  renderCases();
+
+  const filesData = await requestJson(`/api/files?caseId=${encodeURIComponent(activeCaseId)}`);
+  state.files = filesData.files;
+  renderFiles();
+  updateDocumentHead();
+
+  if (!activeFilePath) {
+    markDirty(false);
+    setStatus("Fall aktualisiert", "saved");
+    return;
+  }
+
+  const fileExists = state.files.some((file) => file.path === activeFilePath);
+  if (!fileExists) {
+    state.fileName = "";
+    state.filePath = "";
+    state.sha = "";
+    state.content = "";
+    state.original = "";
+    syncEditorFromState();
+    renderFiles();
+    updateDocumentHead();
+    markDirty(false);
+    setStatus("Datei nicht gefunden", "error");
+    window.alert("Die zuvor geöffnete Datei wurde im Content-Speicher nicht mehr gefunden.");
+    return;
+  }
+
+  await loadFile(activeFilePath);
+  setStatus("Aktualisiert", "saved");
+}
+
 async function saveFile() {
   if (!state.filePath) {
     setStatus("Keine Datei", "error");
@@ -332,6 +400,12 @@ async function saveFile() {
     state.sha = data.sha;
     updateDocumentHead();
     markDirty(false);
+    await loadCases(el.folderSearch.value);
+    if (state.caseId) {
+      const filesData = await requestJson(`/api/files?caseId=${encodeURIComponent(state.caseId)}`);
+      state.files = filesData.files;
+      renderFiles();
+    }
     setStatus("Gespeichert", "saved");
   } catch (error) {
     if (error.status === 409) {
@@ -721,9 +795,7 @@ el.markdownEditor.addEventListener("input", () => {
 el.saveButton.addEventListener("click", () => saveFile().catch(showFatal));
 
 el.reloadButton.addEventListener("click", () => {
-  if (!state.filePath) return;
-  if (state.dirty && !window.confirm("Ungespeicherte Änderungen verwerfen und Datei neu laden?")) return;
-  loadFile(state.filePath).catch(showFatal);
+  refreshActiveCase().catch(showFatal);
 });
 
 el.tabs.forEach((tab) => tab.addEventListener("click", () => setMode(tab.dataset.mode)));
