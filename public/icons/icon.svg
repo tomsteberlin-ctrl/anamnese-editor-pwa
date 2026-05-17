@@ -1,6 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Anamnese Editor">
-  <rect width="512" height="512" rx="88" fill="#146c66"/>
-  <path d="M142 116h228c22 0 40 18 40 40v240H142c-22 0-40-18-40-40V156c0-22 18-40 40-40Z" fill="#f6f4ef"/>
-  <path d="M160 176h180M160 232h212M160 288h148" stroke="#146c66" stroke-width="28" stroke-linecap="round"/>
-  <path d="M351 315 388 278c9-9 24-9 33 0l8 8c9 9 9 24 0 33l-37 37-48 15 7-56Z" fill="#d58b2b"/>
+  <rect width="512" height="512" rx="92" fill="#0e504b"/>
+  <path d="M107 406 221 106c6-16 19-25 35-25s29 9 35 25l114 300h-79l-23-67h-94l-23 67h-79Z" fill="#f7f1e7"/>
+  <path d="M232 274h48l-24-78-24 78Z" fill="#0e504b"/>
+  <path d="M349 147c34-24 66-15 84 22M363 207c16-31 42-46 77-43M359 188c22 18 49 31 81 38" fill="none" stroke="#d99a2b" stroke-width="19" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="349" cy="147" r="22" fill="#d99a2b"/>
+  <circle cx="433" cy="169" r="20" fill="#d99a2b"/>
+  <circle cx="363" cy="207" r="18" fill="#d99a2b"/>
+  <circle cx="440" cy="226" r="18" fill="#d99a2b"/>
 </svg>
