@@ -1,6 +1,7 @@
 import {
   ClientError,
   createFilesCommit,
+  deleteFilesCommit,
   directoryExists,
   getRepositoryConfig,
   listDirectory,
@@ -253,6 +254,25 @@ async function readCaseContext(caseId) {
   };
 }
 
+async function collectCaseFilePaths(casePath) {
+  const items = await listDirectory(casePath);
+  const paths = [];
+
+  for (const item of items) {
+    if (item.type === "file") {
+      paths.push(item.path);
+      continue;
+    }
+
+    if (item.type === "dir") {
+      const nestedPaths = await collectCaseFilePaths(item.path);
+      paths.push(...nestedPaths);
+    }
+  }
+
+  return paths;
+}
+
 function buildCodexBriefing({ caseId, meta, files, rawFile, conceptFile, rawData, currentConcept }) {
   const title = meta.title || caseId;
   const now = new Date().toISOString();
@@ -449,6 +469,37 @@ async function handleCreateCase(req) {
   }, 201);
 }
 
+async function handleDeleteCase(req) {
+  const { contentRoot } = getRepositoryConfig();
+  const body = await req.json().catch(() => {
+    throw new ClientError("Ungueltige JSON-Anfrage.");
+  });
+
+  const caseId = normalizeCaseId(body.caseId);
+  const confirmCaseId = normalizeCaseId(body.confirmCaseId);
+  if (confirmCaseId !== caseId) {
+    throw new ClientError("Bestaetigung passt nicht zum Fallordner.");
+  }
+
+  const casePath = `${contentRoot}/${caseId}`;
+  const filePaths = await collectCaseFilePaths(casePath);
+  if (!filePaths.length) {
+    throw new ClientError("Der Fallordner enthaelt keine Dateien zum Loeschen.");
+  }
+
+  const result = await deleteFilesCommit(
+    filePaths,
+    `Delete ${caseId} via Anamnese Editor`,
+  );
+
+  return json({
+    ok: true,
+    caseId,
+    deletedCount: filePaths.length,
+    ...result,
+  });
+}
+
 async function handleGenerateDraft(req) {
   const body = await req.json().catch(() => {
     throw new ClientError("Ungueltige JSON-Anfrage.");
@@ -558,6 +609,7 @@ export default async (req) => {
     if (req.method === "GET" && path === "/api/file") return await handleReadFile(url);
     if (req.method === "POST" && path === "/api/file") return await handleSaveFile(req);
     if (req.method === "POST" && path === "/api/case") return await handleCreateCase(req);
+    if (req.method === "DELETE" && path === "/api/case") return await handleDeleteCase(req);
     if (req.method === "POST" && path === "/api/draft") return await handleGenerateDraft(req);
     if (req.method === "POST" && path === "/api/briefing") return await handleCreateBriefing(req);
 

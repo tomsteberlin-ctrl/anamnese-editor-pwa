@@ -28,6 +28,7 @@ const el = {
   codexBriefingButton: document.querySelector("#codexBriefingButton"),
   aiDraftButton: document.querySelector("#aiDraftButton"),
   reloadButton: document.querySelector("#reloadButton"),
+  deleteCaseButton: document.querySelector("#deleteCaseButton"),
   saveButton: document.querySelector("#saveButton"),
   tabs: document.querySelectorAll(".tab"),
   findInput: document.querySelector("#findInput"),
@@ -184,6 +185,26 @@ function syncEditorFromState() {
 function updateDocumentHead() {
   el.activeFile.textContent = state.fileName || "Keine Datei geöffnet";
   el.activePath.textContent = state.filePath || (state.caseName ? `${state.caseName}` : "");
+}
+
+function clearActiveCase() {
+  state.caseId = "";
+  state.caseName = "";
+  state.fileName = "";
+  state.filePath = "";
+  state.sha = "";
+  state.content = "";
+  state.original = "";
+  state.files = [];
+  state.sections = [];
+  state.findIndex = 0;
+  state.dirty = false;
+  el.markdownEditor.value = "";
+  el.preview.innerHTML = "";
+  el.sectionNav.replaceChildren();
+  el.sectionEditor.replaceChildren();
+  updateDocumentHead();
+  renderFiles();
 }
 
 function renderCases() {
@@ -424,6 +445,54 @@ async function prepareCodexBriefing() {
   }
 }
 
+async function deleteCurrentCase() {
+  if (!state.caseId) {
+    setStatus("Kein Fall gewählt", "error");
+    window.alert("Bitte zuerst links einen Fall auswählen.");
+    return;
+  }
+
+  if (state.dirty && !window.confirm("Die aktuelle Datei ist nicht gespeichert. Beim Löschen gehen diese Änderungen verloren. Trotzdem fortfahren?")) {
+    return;
+  }
+
+  const caseId = state.caseId;
+  const caseName = state.caseName || caseId;
+  const confirmation = window.prompt(
+    `Fall "${caseName}" wirklich löschen?\n\nDas löscht alle Dateien in diesem Fallordner per GitHub-Commit.\n\nBitte zur Bestätigung die Fall-ID eingeben:\n${caseId}`,
+  );
+
+  if (confirmation === null) return;
+  if (confirmation.trim() !== caseId) {
+    setStatus("Nicht gelöscht", "error");
+    window.alert("Die Eingabe passt nicht zur Fall-ID. Der Fall wurde nicht gelöscht.");
+    return;
+  }
+
+  el.deleteCaseButton.disabled = true;
+  setStatus("Fall löschen", "idle");
+
+  try {
+    const data = await requestJson("/api/case", {
+      method: "DELETE",
+      body: JSON.stringify({
+        caseId,
+        confirmCaseId: confirmation.trim(),
+      }),
+    });
+
+    clearActiveCase();
+    await loadCases(el.folderSearch.value);
+    setStatus(`Fall gelöscht (${data.deletedCount} Dateien)`, "saved");
+  } catch (error) {
+    console.error(error);
+    setStatus("Löschen fehlgeschlagen", "error");
+    window.alert(error.message);
+  } finally {
+    el.deleteCaseButton.disabled = false;
+  }
+}
+
 async function generateAiDraft() {
   if (!state.caseId) {
     setStatus("Kein Fall gewählt", "error");
@@ -639,6 +708,7 @@ el.folderSearch.addEventListener("input", debouncedCaseSearch);
 el.newCaseButton.addEventListener("click", openNewCaseDialog);
 el.codexBriefingButton.addEventListener("click", () => prepareCodexBriefing().catch(showFatal));
 el.aiDraftButton.addEventListener("click", () => generateAiDraft().catch(showFatal));
+el.deleteCaseButton.addEventListener("click", () => deleteCurrentCase().catch(showFatal));
 el.newCaseForm.addEventListener("submit", (event) => createCase(event).catch(showFatal));
 el.cancelNewCaseButton.addEventListener("click", () => el.newCaseDialog.close());
 

@@ -38,6 +38,7 @@ Für lokale Function-Tests eine `.env` nach `.env.example` anlegen. Den Token ni
 - `Neuer Fall` legt `anamnesekonzept.md`, `rohdaten.md` und `meta.json` im Content-Repo an.
 - `Codex-Briefing` erzeugt oder aktualisiert `codex-briefing.md` fuer den aktiven Fall.
 - `KI-Entwurf` erstellt nur einen ungespeicherten Entwurf im Editor.
+- `Fall loeschen` entfernt nach Fall-ID-Bestaetigung alle Dateien des aktiven Fallordners per GitHub-Commit.
 
 ## Import
 

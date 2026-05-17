@@ -193,7 +193,7 @@ export async function updateMarkdownFile(repoPath, content, sha) {
   };
 }
 
-export async function createFilesCommit(files, message) {
+async function createTreeCommit(tree, message) {
   const { owner, repo, branch } = getRepositoryConfig();
   const ref = await githubRequest(`/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(branch)}`);
   const parentSha = ref.object?.sha;
@@ -206,17 +206,6 @@ export async function createFilesCommit(files, message) {
   if (!baseTreeSha) {
     throw new ClientError("GitHub-Baum konnte nicht gelesen werden.", 500);
   }
-
-  const tree = files.map((file) => {
-    const cleanPath = String(file.path || "").replaceAll("\\", "/").trim().replace(/^\/+/, "");
-    ensureSafeParts(cleanPath);
-    return {
-      path: cleanPath,
-      mode: "100644",
-      type: "blob",
-      content: String(file.content ?? ""),
-    };
-  });
 
   const nextTree = await githubRequest(`/repos/${owner}/${repo}/git/trees`, {
     method: "POST",
@@ -246,4 +235,38 @@ export async function createFilesCommit(files, message) {
     commitSha: nextCommit.sha,
     htmlUrl: nextCommit.html_url || "",
   };
+}
+
+export async function createFilesCommit(files, message) {
+  const tree = files.map((file) => {
+    const cleanPath = String(file.path || "").replaceAll("\\", "/").trim().replace(/^\/+/, "");
+    ensureSafeParts(cleanPath);
+    return {
+      path: cleanPath,
+      mode: "100644",
+      type: "blob",
+      content: String(file.content ?? ""),
+    };
+  });
+
+  return createTreeCommit(tree, message);
+}
+
+export async function deleteFilesCommit(paths, message) {
+  if (!Array.isArray(paths) || !paths.length) {
+    throw new ClientError("Keine Dateien zum Loeschen gefunden.");
+  }
+
+  const tree = paths.map((repoPath) => {
+    const cleanPath = String(repoPath || "").replaceAll("\\", "/").trim().replace(/^\/+/, "");
+    ensureSafeParts(cleanPath);
+    return {
+      path: cleanPath,
+      mode: "100644",
+      type: "blob",
+      sha: null,
+    };
+  });
+
+  return createTreeCommit(tree, message);
 }
