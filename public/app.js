@@ -9,9 +9,10 @@ const state = {
   sha: "",
   content: "",
   original: "",
-  mode: "edit",
+  mode: "preview",
   dirty: false,
   sections: [],
+  previewSegments: [],
   findIndex: 0,
 };
 
@@ -123,59 +124,158 @@ function inlineMarkdown(text) {
     .replace(/\*([^*]+)\*/g, "<em>$1</em>");
 }
 
-function renderMarkdown(markdown) {
+function parseMarkdownSegments(markdown) {
   const lines = markdown.split(/\r?\n/);
-  const html = [];
-  let paragraph = [];
-  let list = [];
+  const segments = [];
+  let current = null;
 
-  const flushParagraph = () => {
-    if (!paragraph.length) return;
-    html.push(`<p>${inlineMarkdown(paragraph.join(" "))}</p>`);
-    paragraph = [];
-  };
-
-  const flushList = () => {
-    if (!list.length) return;
-    html.push(`<ul>${list.map((item) => `<li>${inlineMarkdown(item)}</li>`).join("")}</ul>`);
-    list = [];
+  const flushCurrent = () => {
+    if (!current) return;
+    current.markdown = current.lines.join("\n");
+    segments.push(current);
+    current = null;
   };
 
   for (const line of lines) {
-    const heading = /^(#{1,4})\s+(.*)$/.exec(line);
-    const bullet = /^\s*-\s+(.*)$/.exec(line);
-
     if (!line.trim()) {
-      flushParagraph();
-      flushList();
+      flushCurrent();
+      segments.push({ type: "blank", markdown: line });
       continue;
     }
 
-    if (heading) {
-      flushParagraph();
-      flushList();
-      const level = heading[1].length;
-      html.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`);
+    if (/^(#{1,4})\s+/.test(line)) {
+      flushCurrent();
+      segments.push({ type: "heading", markdown: line, lines: [line] });
       continue;
     }
 
-    if (bullet) {
-      flushParagraph();
-      list.push(bullet[1]);
-      continue;
+    const type = /^\s*-\s+/.test(line) ? "list" : "paragraph";
+    if (!current || current.type !== type) {
+      flushCurrent();
+      current = { type, lines: [] };
     }
-
-    flushList();
-    paragraph.push(line.trim());
+    current.lines.push(line);
   }
 
-  flushParagraph();
-  flushList();
-  return html.join("\n");
+  flushCurrent();
+  return segments;
+}
+
+function editableAttributes(index) {
+  return `data-segment-index="${index}" contenteditable="true" spellcheck="true" tabindex="0"`;
+}
+
+function renderMarkdownSegment(segment, index) {
+  if (segment.type === "blank") return "";
+
+  if (segment.type === "heading") {
+    const heading = /^(#{1,4})\s+(.*)$/.exec(segment.markdown);
+    if (!heading) return "";
+    const level = heading[1].length;
+    return `<h${level} ${editableAttributes(index)}>${inlineMarkdown(heading[2])}</h${level}>`;
+  }
+
+  const lines = segment.markdown.split(/\n/);
+  if (segment.type === "list") {
+    const items = lines
+      .map((line) => /^\s*-\s+(.*)$/.exec(line))
+      .filter(Boolean)
+      .map((match) => `<li>${inlineMarkdown(match[1])}</li>`)
+      .join("");
+    return `<ul ${editableAttributes(index)}>${items}</ul>`;
+  }
+
+  const body = lines.map((line) => inlineMarkdown(line.trim())).join("<br>");
+  return `<p ${editableAttributes(index)}>${body}</p>`;
+}
+
+function renderMarkdown(markdown) {
+  const segments = parseMarkdownSegments(markdown);
+  const html = segments.map((segment, index) => renderMarkdownSegment(segment, index)).join("\n");
+  return { html, segments };
+}
+
+function inlineDomToMarkdown(node) {
+  const parts = [];
+
+  for (const child of node.childNodes) {
+    if (child.nodeType === Node.TEXT_NODE) {
+      parts.push(child.textContent.replace(/\u00a0/g, " "));
+      continue;
+    }
+    if (child.nodeType !== Node.ELEMENT_NODE) continue;
+
+    const tag = child.tagName.toLowerCase();
+    if (tag === "br") {
+      parts.push("\n");
+      continue;
+    }
+
+    const value = inlineDomToMarkdown(child);
+    if (tag === "strong" || tag === "b") {
+      parts.push(`**${value}**`);
+    } else if (tag === "em" || tag === "i") {
+      parts.push(`*${value}*`);
+    } else if (tag === "code") {
+      parts.push(`\`${value.replaceAll("`", "\\`")}\``);
+    } else if (tag === "div" || tag === "p") {
+      parts.push(`${value}\n`);
+    } else {
+      parts.push(value);
+    }
+  }
+
+  return parts.join("");
+}
+
+function cleanPreviewText(text) {
+  return text
+    .replace(/\u00a0/g, " ")
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function previewBlockToMarkdown(block) {
+  const tag = block.tagName.toLowerCase();
+
+  if (/^h[1-4]$/.test(tag)) {
+    const level = Number(tag.slice(1));
+    const text = cleanPreviewText(inlineDomToMarkdown(block)).replace(/\n+/g, " ").trim();
+    return `${"#".repeat(level)} ${text}`;
+  }
+
+  if (tag === "ul") {
+    const items = Array.from(block.children)
+      .filter((child) => child.tagName?.toLowerCase() === "li")
+      .map((item) => cleanPreviewText(inlineDomToMarkdown(item)).replace(/\n+/g, " ").trim())
+      .filter(Boolean);
+    return items.map((item) => `- ${item}`).join("\n");
+  }
+
+  return cleanPreviewText(inlineDomToMarkdown(block));
+}
+
+function syncContentFromPreviewBlock(block) {
+  const index = Number(block.dataset.segmentIndex);
+  const segment = state.previewSegments[index];
+  if (!segment || segment.type === "blank") return;
+
+  segment.markdown = previewBlockToMarkdown(block);
+  state.content = state.previewSegments.map((item) => item.markdown).join("\n");
+  if (el.markdownEditor.value !== state.content) {
+    el.markdownEditor.value = state.content;
+  }
+  markDirty(state.content !== state.original);
 }
 
 const refreshPreview = debounce(() => {
-  el.preview.innerHTML = renderMarkdown(state.content || "");
+  const rendered = renderMarkdown(state.content || "");
+  state.previewSegments = rendered.segments;
+  el.preview.innerHTML = rendered.html;
 }, 180);
 
 function markDirty(isDirty = true) {
@@ -469,7 +569,7 @@ async function createCase(event) {
     };
     await selectCase(createdCase);
     await loadFile(data.openPath);
-    setMode("edit");
+    setMode("preview");
     setStatus("Fall angelegt", "saved");
   } catch (error) {
     console.error(error);
@@ -508,7 +608,7 @@ async function prepareCodexBriefing() {
     };
     await selectCase(currentCase);
     await loadFile(data.path);
-    setMode("edit");
+    setMode("preview");
     setStatus("Briefing bereit", "saved");
   } catch (error) {
     console.error(error);
@@ -591,7 +691,7 @@ async function generateAiDraft() {
     state.content = data.content;
     syncEditorFromState();
     if (state.mode === "sections") renderSections();
-    setMode("edit");
+    setMode("preview");
     markDirty(true);
     setStatus("KI-Entwurf bereit", "dirty");
   } catch (error) {
@@ -790,6 +890,12 @@ el.markdownEditor.addEventListener("input", () => {
   state.content = el.markdownEditor.value;
   markDirty(state.content !== state.original);
   refreshPreview();
+});
+
+el.preview.addEventListener("input", (event) => {
+  const block = event.target.closest?.("[data-segment-index]");
+  if (!block || !el.preview.contains(block)) return;
+  syncContentFromPreviewBlock(block);
 });
 
 el.saveButton.addEventListener("click", () => saveFile().catch(showFatal));

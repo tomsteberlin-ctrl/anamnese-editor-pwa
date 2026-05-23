@@ -436,6 +436,7 @@ input[type="date"] {
   min-height: 360px;
   overflow: auto;
   padding: 22px 28px;
+  cursor: text;
   line-height: 1.58;
 }
 
@@ -483,6 +484,17 @@ input[type="date"] {
   border-radius: 4px;
   background: #eef1f2;
   padding: 1px 4px;
+}
+
+.preview [contenteditable="true"] {
+  border-radius: 4px;
+  outline: 1px solid transparent;
+  outline-offset: 2px;
+}
+
+.preview [contenteditable="true"]:focus {
+  background: #fffdf4;
+  outline-color: var(--focus);
 }
 
 dialog {

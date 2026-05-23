@@ -1,4 +1,4 @@
-const CACHE_NAME = "anamnese-editor-shell-v7";
+const CACHE_NAME = "anamnese-editor-shell-v8";
 
 const SHELL_ASSETS = [
   "/",

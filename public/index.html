@@ -8,7 +8,7 @@
     <title>Anamnese Editor</title>
     <link rel="manifest" href="./manifest.webmanifest">
     <link rel="icon" href="./icons/icon.svg?v=20260517-icon" type="image/svg+xml" sizes="any">
-    <link rel="stylesheet" href="./styles.css?v=20260517-refresh">
+    <link rel="stylesheet" href="./styles.css?v=20260523-editable-preview">
   </head>
   <body>
     <div class="app-shell">
@@ -53,9 +53,9 @@
 
         <section class="controls">
           <div class="tabs" role="tablist" aria-label="Bearbeitungsmodus">
-            <button class="tab active" data-mode="edit" type="button">Text</button>
+            <button class="tab" data-mode="edit" type="button">Text</button>
             <button class="tab" data-mode="sections" type="button">Abschnitte</button>
-            <button class="tab" data-mode="preview" type="button">Vorschau</button>
+            <button class="tab active" data-mode="preview" type="button">Vorschau</button>
           </div>
           <div class="findbar">
             <input id="findInput" type="search" placeholder="Suchen">
@@ -65,7 +65,7 @@
           </div>
         </section>
 
-        <section id="editView" class="view active">
+        <section id="editView" class="view">
           <textarea id="markdownEditor" spellcheck="true" placeholder="Wähle links einen Fallordner und eine Markdown-Datei."></textarea>
         </section>
 
@@ -74,7 +74,7 @@
           <div id="sectionEditor" class="section-editor"></div>
         </section>
 
-        <section id="previewView" class="view">
+        <section id="previewView" class="view active">
           <article id="preview" class="preview"></article>
         </section>
       </main>
@@ -131,6 +131,6 @@
       </form>
     </dialog>
 
-    <script src="./app.js?v=20260517-refresh" type="module"></script>
+    <script src="./app.js?v=20260523-editable-preview" type="module"></script>
   </body>
 </html>
