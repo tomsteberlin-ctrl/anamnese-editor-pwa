@@ -4,11 +4,11 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#0e504b">
-    <meta name="description" content="Interner Markdown-Editor für Anamneseberichte.">
+    <meta name="description" content="Interner Dokumenteditor für Anamneseberichte.">
     <title>Anamnese Editor</title>
     <link rel="manifest" href="./manifest.webmanifest">
     <link rel="icon" href="./icons/icon.svg?v=20260517-icon" type="image/svg+xml" sizes="any">
-    <link rel="stylesheet" href="./styles.css?v=20260523-editable-preview">
+    <link rel="stylesheet" href="./styles.css?v=20260524-document-editor">
   </head>
   <body>
     <div class="app-shell">
@@ -30,22 +30,22 @@
 
       <aside class="sidebar" aria-label="Fall- und Dateiauswahl">
         <section class="panel">
-          <label for="folderSearch">Fallordner mit Markdown suchen</label>
+          <label for="folderSearch">Fallordner suchen</label>
           <input id="folderSearch" type="search" placeholder="Name, Tier, Datum">
-          <div id="folderList" class="listbox" role="listbox" aria-label="Fallordner mit Markdown-Dateien"></div>
+          <div id="folderList" class="listbox" role="listbox" aria-label="Fallordner mit Dokumenten"></div>
         </section>
 
         <section class="panel files-panel">
-          <div class="panel-title">Markdown-Dateien</div>
-          <div id="fileList" class="listbox compact" role="listbox" aria-label="Markdown-Dateien"></div>
+          <div class="panel-title">Dokumente</div>
+          <div id="fileList" class="listbox compact" role="listbox" aria-label="Dokumente"></div>
         </section>
       </aside>
 
       <main class="workspace">
         <section class="document-head">
           <div>
-            <div class="caption">Aktive Datei</div>
-            <h1 id="activeFile">Keine Datei geöffnet</h1>
+            <div class="caption">Aktives Dokument</div>
+            <h1 id="activeFile">Kein Dokument geöffnet</h1>
             <div id="activePath" class="pathline"></div>
           </div>
           <div id="saveStatus" class="status idle">Bereit</div>
@@ -53,9 +53,9 @@
 
         <section class="controls">
           <div class="tabs" role="tablist" aria-label="Bearbeitungsmodus">
-            <button class="tab" data-mode="edit" type="button">Text</button>
+            <button class="tab active" data-mode="preview" type="button">Dokument</button>
             <button class="tab" data-mode="sections" type="button">Abschnitte</button>
-            <button class="tab active" data-mode="preview" type="button">Vorschau</button>
+            <button class="tab" data-mode="edit" type="button">Markdown</button>
           </div>
           <div class="findbar">
             <input id="findInput" type="search" placeholder="Suchen">
@@ -66,7 +66,7 @@
         </section>
 
         <section id="editView" class="view">
-          <textarea id="markdownEditor" spellcheck="true" placeholder="Wähle links einen Fallordner und eine Markdown-Datei."></textarea>
+          <textarea id="markdownEditor" spellcheck="true" placeholder="Wähle links einen Fallordner und ein Dokument."></textarea>
         </section>
 
         <section id="sectionsView" class="view split-view">
@@ -74,8 +74,8 @@
           <div id="sectionEditor" class="section-editor"></div>
         </section>
 
-        <section id="previewView" class="view active">
-          <article id="preview" class="preview"></article>
+        <section id="previewView" class="view active document-canvas">
+          <article id="preview" class="preview document-page"></article>
         </section>
       </main>
     </div>
@@ -122,8 +122,8 @@
 
     <dialog id="conflictDialog">
       <form method="dialog">
-        <h2>Datei wurde verändert</h2>
-        <p>Die Datei wurde seit dem Laden in GitHub geändert. Du kannst neu laden oder nach Prüfung erneut speichern.</p>
+        <h2>Dokument wurde verändert</h2>
+        <p>Das Dokument wurde seit dem Laden in GitHub geändert. Du kannst neu laden oder nach Prüfung erneut speichern.</p>
         <div class="dialog-actions">
           <button value="reload" type="submit">Neu laden</button>
           <button value="cancel" type="submit">Abbrechen</button>
@@ -131,6 +131,6 @@
       </form>
     </dialog>
 
-    <script src="./app.js?v=20260523-editable-preview" type="module"></script>
+    <script src="./app.js?v=20260524-document-editor" type="module"></script>
   </body>
 </html>

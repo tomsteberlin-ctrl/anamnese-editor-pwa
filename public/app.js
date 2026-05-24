@@ -109,6 +109,10 @@ function todayInputValue() {
   return date.toISOString().slice(0, 10);
 }
 
+function displayDocumentName(name) {
+  return (name || "").replace(/\.md$/i, "");
+}
+
 function escapeHtml(text) {
   return String(text)
     .replaceAll("&", "&amp;")
@@ -272,11 +276,13 @@ function syncContentFromPreviewBlock(block) {
   markDirty(state.content !== state.original);
 }
 
-const refreshPreview = debounce(() => {
+function renderPreviewNow() {
   const rendered = renderMarkdown(state.content || "");
   state.previewSegments = rendered.segments;
   el.preview.innerHTML = rendered.html;
-}, 180);
+}
+
+const refreshPreview = debounce(renderPreviewNow, 180);
 
 function markDirty(isDirty = true) {
   state.dirty = isDirty;
@@ -291,8 +297,8 @@ function syncEditorFromState() {
 }
 
 function updateDocumentHead() {
-  el.activeFile.textContent = state.fileName || "Keine Datei geöffnet";
-  el.activePath.textContent = state.filePath || (state.caseName ? `${state.caseName}` : "");
+  el.activeFile.textContent = displayDocumentName(state.fileName) || "Kein Dokument geöffnet";
+  el.activePath.textContent = state.caseName || "";
 }
 
 function clearActiveCase() {
@@ -329,7 +335,7 @@ function renderCases() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `list-item${item.id === state.caseId ? " active" : ""}`;
-    const countLabel = item.markdownCount === 1 ? "1 Markdown-Datei" : `${item.markdownCount} Markdown-Dateien`;
+    const countLabel = item.markdownCount === 1 ? "1 Dokument" : `${item.markdownCount} Dokumente`;
     button.innerHTML = `${escapeHtml(item.title || item.id)}<small>${formatDate(item.updatedAt)} · ${countLabel}</small>`;
     button.addEventListener("click", () => selectCase(item));
     el.folderList.append(button);
@@ -348,7 +354,7 @@ function renderFiles() {
   if (!state.files.length) {
     const empty = document.createElement("div");
     empty.className = "list-item";
-    empty.textContent = "Keine Markdown-Dateien";
+    empty.textContent = "Keine Dokumente";
     el.fileList.append(empty);
     return;
   }
@@ -357,7 +363,7 @@ function renderFiles() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `list-item${file.path === state.filePath ? " active" : ""}`;
-    button.innerHTML = `${escapeHtml(file.name)}<small>${Math.round(file.size / 1024)} KB</small>`;
+    button.innerHTML = `${escapeHtml(displayDocumentName(file.name))}<small>${Math.round(file.size / 1024)} KB</small>`;
     button.addEventListener("click", () => loadFile(file.path));
     el.fileList.append(button);
   }
@@ -378,7 +384,7 @@ async function loadCases(query = "") {
 }
 
 async function selectCase(item) {
-  if (state.dirty && !window.confirm("Die aktuelle Datei ist nicht gespeichert. Trotzdem den Fallordner wechseln?")) {
+  if (state.dirty && !window.confirm("Das aktuelle Dokument ist nicht gespeichert. Trotzdem den Fallordner wechseln?")) {
     return;
   }
   state.caseId = item.id;
@@ -394,7 +400,7 @@ async function selectCase(item) {
   el.sectionEditor.replaceChildren();
   updateDocumentHead();
   renderCases();
-  setStatus("Dateien laden", "idle");
+  setStatus("Dokumente laden", "idle");
   const data = await requestJson(`/api/files?caseId=${encodeURIComponent(item.id)}`);
   state.files = data.files;
   renderFiles();
@@ -402,10 +408,10 @@ async function selectCase(item) {
 }
 
 async function loadFile(filePath) {
-  if (state.dirty && !window.confirm("Die aktuelle Datei ist nicht gespeichert. Trotzdem eine andere Datei öffnen?")) {
+  if (state.dirty && !window.confirm("Das aktuelle Dokument ist nicht gespeichert. Trotzdem ein anderes Dokument öffnen?")) {
     return;
   }
-  setStatus("Datei laden", "idle");
+  setStatus("Dokument laden", "idle");
   const data = await requestJson(`/api/file?path=${encodeURIComponent(filePath)}`);
   state.fileName = data.name;
   state.filePath = data.path;
@@ -471,8 +477,8 @@ async function refreshActiveCase() {
     renderFiles();
     updateDocumentHead();
     markDirty(false);
-    setStatus("Datei nicht gefunden", "error");
-    window.alert("Die zuvor geöffnete Datei wurde im Content-Speicher nicht mehr gefunden.");
+    setStatus("Dokument nicht gefunden", "error");
+    window.alert("Das zuvor geöffnete Dokument wurde im Content-Speicher nicht mehr gefunden.");
     return;
   }
 
@@ -482,7 +488,7 @@ async function refreshActiveCase() {
 
 async function saveFile() {
   if (!state.filePath) {
-    setStatus("Keine Datei", "error");
+    setStatus("Kein Dokument", "error");
     return;
   }
 
@@ -520,7 +526,7 @@ async function saveFile() {
 }
 
 function openNewCaseDialog() {
-  if (state.dirty && !window.confirm("Die aktuelle Datei ist nicht gespeichert. Trotzdem einen neuen Fall anlegen?")) {
+  if (state.dirty && !window.confirm("Das aktuelle Dokument ist nicht gespeichert. Trotzdem einen neuen Fall anlegen?")) {
     return;
   }
   el.newCaseForm.reset();
@@ -626,7 +632,7 @@ async function deleteCurrentCase() {
     return;
   }
 
-  if (state.dirty && !window.confirm("Die aktuelle Datei ist nicht gespeichert. Beim Löschen gehen diese Änderungen verloren. Trotzdem fortfahren?")) {
+  if (state.dirty && !window.confirm("Das aktuelle Dokument ist nicht gespeichert. Beim Löschen gehen diese Änderungen verloren. Trotzdem fortfahren?")) {
     return;
   }
 
@@ -657,7 +663,7 @@ async function deleteCurrentCase() {
 
     clearActiveCase();
     await loadCases(el.folderSearch.value);
-    setStatus(`Fall gelöscht (${data.deletedCount} Dateien)`, "saved");
+    setStatus(`Fall gelöscht (${data.deletedCount} Dokumente)`, "saved");
   } catch (error) {
     console.error(error);
     setStatus("Löschen fehlgeschlagen", "error");
@@ -807,14 +813,36 @@ function setMode(mode) {
   el.sectionsView.classList.toggle("active", mode === "sections");
   el.previewView.classList.toggle("active", mode === "preview");
   if (mode === "sections") renderSections();
-  if (mode === "preview") refreshPreview();
+  if (mode === "preview") renderPreviewNow();
+}
+
+function previewSegmentIndexForContentIndex(index) {
+  let cursor = 0;
+  for (let i = 0; i < state.previewSegments.length; i += 1) {
+    const segment = state.previewSegments[i];
+    const length = segment.markdown.length;
+    if (index >= cursor && index <= cursor + length && segment.type !== "blank") return i;
+    cursor += length + 1;
+  }
+  return state.previewSegments.findIndex((segment) => segment.type !== "blank");
+}
+
+function focusPreviewSegmentForContentIndex(index) {
+  renderPreviewNow();
+  const segmentIndex = previewSegmentIndexForContentIndex(index);
+  if (segmentIndex < 0) return;
+  const target = el.preview.querySelector(`[data-segment-index="${segmentIndex}"]`);
+  if (!target) return;
+  target.scrollIntoView({ block: "center", behavior: "smooth" });
+  target.focus({ preventScroll: true });
+  target.classList.add("search-hit");
+  window.setTimeout(() => target.classList.remove("search-hit"), 1400);
 }
 
 function findNext() {
   const term = el.findInput.value;
   if (!term) return;
-  setMode("edit");
-  const text = el.markdownEditor.value;
+  const text = state.content || "";
   let index = text.toLowerCase().indexOf(term.toLowerCase(), state.findIndex);
   if (index < 0 && state.findIndex > 0) {
     index = text.toLowerCase().indexOf(term.toLowerCase(), 0);
@@ -823,10 +851,10 @@ function findNext() {
     setStatus("Nicht gefunden", "error");
     return;
   }
-  el.markdownEditor.focus();
-  el.markdownEditor.setSelectionRange(index, index + term.length);
+  setMode("preview");
+  focusPreviewSegmentForContentIndex(index);
   state.findIndex = index + term.length;
-  setStatus("Gefunden", "idle");
+  if (!state.dirty) setStatus("Gefunden", "idle");
 }
 
 function replaceAll() {
