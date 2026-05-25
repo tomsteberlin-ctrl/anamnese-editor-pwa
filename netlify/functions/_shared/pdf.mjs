@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import PDFDocument from "pdfkit";
 
@@ -21,8 +22,30 @@ const PAGE_MARGINS = {
 let logoBufferPromise = null;
 
 function getLogoBuffer() {
-  logoBufferPromise ||= readFile(logoPath).catch(() => null);
+  logoBufferPromise ||= readFirstExistingFile([
+    logoPath,
+    path.join(process.cwd(), "netlify", "functions", "_shared", "assets", "logo.png"),
+    path.join(process.cwd(), "_shared", "assets", "logo.png"),
+    path.join(process.cwd(), "assets", "logo.png"),
+    path.join(process.env.LAMBDA_TASK_ROOT || "", "netlify", "functions", "_shared", "assets", "logo.png"),
+    path.join(process.env.LAMBDA_TASK_ROOT || "", "_shared", "assets", "logo.png"),
+    path.join(process.env.LAMBDA_TASK_ROOT || "", "assets", "logo.png"),
+  ]);
   return logoBufferPromise;
+}
+
+async function readFirstExistingFile(candidates) {
+  const seen = new Set();
+  for (const candidate of candidates) {
+    if (!candidate || seen.has(candidate)) continue;
+    seen.add(candidate);
+    try {
+      return await readFile(candidate);
+    } catch {
+      // Try the next Netlify bundle layout candidate.
+    }
+  }
+  return null;
 }
 
 function normalizeFilenamePart(value, fallback = "Konzept") {
