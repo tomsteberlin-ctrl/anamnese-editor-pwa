@@ -91,22 +91,107 @@ function decodeEntities(value) {
 }
 
 function cleanInline(value) {
-  return decodeEntities(value)
-    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+  return normalizeInlineSource(value)
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)")
     .replace(/`([^`]+)`/g, "$1")
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/__([^_]+)__/g, "$1")
     .replace(/\*([^*]+)\*/g, "$1")
     .replace(/_([^_]+)_/g, "$1")
+    .trim();
+}
+
+function normalizeInlineSource(value) {
+  return decodeEntities(value)
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<[^>]+>/g, "")
     .replace(/\u00a0/g, " ")
     .replace(/\u202f/g, " ")
     .replace(/\u2011/g, "-")
     .replace(/\u2212/g, "-")
-    .replace(/[ \t]+\n/g, "\n")
-    .trim();
+    .replace(/[ \t]+\n/g, "\n");
+}
+
+function stripInlineMarkup(value) {
+  return String(value || "")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/_([^_]+)_/g, "$1");
+}
+
+function cleanLinkTarget(rawUrl) {
+  let target = String(rawUrl || "").trim();
+  let trailing = "";
+
+  while (/[.,;:!?]$/.test(target)) {
+    trailing = `${target.at(-1)}${trailing}`;
+    target = target.slice(0, -1);
+  }
+
+  while (/[\])}]$/.test(target)) {
+    trailing = `${target.at(-1)}${trailing}`;
+    target = target.slice(0, -1);
+  }
+
+  target = target.replace(/[*_`]+$/g, "");
+  const href = /^www\./i.test(target) ? `https://${target}` : target;
+  return {
+    href,
+    text: target,
+    trailing,
+  };
+}
+
+function pushPlainRuns(runs, value) {
+  const source = String(value || "");
+  if (!source) return;
+
+  const urlPattern = /(?:https?:\/\/|www\.)[^\s<]+/gi;
+  let cursor = 0;
+  let match = urlPattern.exec(source);
+
+  while (match) {
+    const before = stripInlineMarkup(source.slice(cursor, match.index));
+    if (before) runs.push({ text: before });
+
+    const link = cleanLinkTarget(match[0]);
+    if (link.text) runs.push({ text: link.text, link: link.href });
+    if (link.trailing) runs.push({ text: link.trailing });
+
+    cursor = match.index + match[0].length;
+    match = urlPattern.exec(source);
+  }
+
+  const rest = stripInlineMarkup(source.slice(cursor));
+  if (rest) runs.push({ text: rest });
+}
+
+function parseInlineRuns(value) {
+  const source = normalizeInlineSource(value).trim();
+  if (!source) return [];
+
+  const runs = [];
+  const markdownLinkPattern = /\[([^\]]+)\]\((https?:\/\/[^)\s]+|www\.[^)\s]+)\)/gi;
+  let cursor = 0;
+  let match = markdownLinkPattern.exec(source);
+
+  while (match) {
+    pushPlainRuns(runs, source.slice(cursor, match.index));
+
+    const link = cleanLinkTarget(match[2]);
+    const label = stripInlineMarkup(match[1]).trim();
+    if (label && link.href) runs.push({ text: label, link: link.href });
+    if (link.trailing) runs.push({ text: link.trailing });
+
+    cursor = match.index + match[0].length;
+    match = markdownLinkPattern.exec(source);
+  }
+
+  pushPlainRuns(runs, source.slice(cursor));
+  return runs.filter((run) => run.text);
 }
 
 function flushParagraph(blocks, lines) {
@@ -173,6 +258,35 @@ function resetTextColumn(doc) {
   doc.x = doc.page.margins.left;
 }
 
+function renderInlineText(doc, value, x, y, options = {}) {
+  const runs = parseInlineRuns(value);
+  if (!runs.length) return false;
+
+  const baseColor = options.color || COLORS.text;
+  runs.forEach((run, index) => {
+    const isFirst = index === 0;
+    const isLast = index === runs.length - 1;
+    const textOptions = {
+      ...options,
+      continued: !isLast,
+      link: run.link,
+      underline: Boolean(run.link),
+    };
+
+    delete textOptions.color;
+    doc.fillColor(run.link ? COLORS.teal : baseColor);
+
+    if (isFirst) {
+      doc.text(run.text, x, y, textOptions);
+    } else {
+      doc.text(run.text, textOptions);
+    }
+  });
+
+  doc.fillColor(baseColor);
+  return true;
+}
+
 function ensureSpace(doc, height) {
   const bottom = doc.page.height - doc.page.margins.bottom;
   if (doc.y + height > bottom) doc.addPage();
@@ -205,16 +319,16 @@ function drawSubtitleRule(doc) {
 }
 
 function renderHeading(doc, block, state) {
-  const text = cleanInline(block.text);
-  if (!text) return;
+  if (!cleanInline(block.text)) return;
 
   if (block.level === 1 && state.topHeadingCount === 0) {
     ensureSpace(doc, 42);
     doc.font("Helvetica-Bold").fontSize(19).fillColor(COLORS.title);
-    doc.text(text, doc.page.margins.left, doc.y, {
+    renderInlineText(doc, block.text, doc.page.margins.left, doc.y, {
       width: contentWidth(doc),
       align: "center",
       lineGap: 1,
+      color: COLORS.title,
     });
     doc.moveDown(0.25);
     resetTextColumn(doc);
@@ -225,10 +339,11 @@ function renderHeading(doc, block, state) {
   if (block.level === 1 && state.topHeadingCount === 1) {
     ensureSpace(doc, 48);
     doc.font("Helvetica-Bold").fontSize(16).fillColor(COLORS.teal);
-    doc.text(text, doc.page.margins.left, doc.y, {
+    renderInlineText(doc, block.text, doc.page.margins.left, doc.y, {
       width: contentWidth(doc),
       align: "center",
       lineGap: 1,
+      color: COLORS.teal,
     });
     drawSubtitleRule(doc);
     resetTextColumn(doc);
@@ -240,9 +355,10 @@ function renderHeading(doc, block, state) {
     ensureSpace(doc, 54);
     doc.moveDown(0.75);
     doc.font("Helvetica-Bold").fontSize(15).fillColor(COLORS.teal);
-    doc.text(text, doc.page.margins.left, doc.y, {
+    renderInlineText(doc, block.text, doc.page.margins.left, doc.y, {
       width: contentWidth(doc),
       lineGap: 1,
+      color: COLORS.teal,
     });
     const y = doc.y + 3;
     doc
@@ -261,32 +377,32 @@ function renderHeading(doc, block, state) {
   ensureSpace(doc, 36);
   doc.moveDown(0.45);
   doc.font("Helvetica-Bold").fontSize(block.level === 3 ? 12.4 : 11.2).fillColor(COLORS.title);
-  doc.text(text, doc.page.margins.left, doc.y, {
+  renderInlineText(doc, block.text, doc.page.margins.left, doc.y, {
     width: contentWidth(doc),
     lineGap: 1,
+    color: COLORS.title,
   });
   doc.moveDown(0.25);
   resetTextColumn(doc);
 }
 
 function renderParagraph(doc, block) {
-  const text = cleanInline(block.text);
-  if (!text) return;
+  if (!cleanInline(block.text)) return;
 
   ensureSpace(doc, 28);
   doc.font("Helvetica").fontSize(10.5).fillColor(COLORS.text);
-  doc.text(text, doc.page.margins.left, doc.y, {
+  renderInlineText(doc, block.text, doc.page.margins.left, doc.y, {
     width: contentWidth(doc),
     align: "left",
     lineGap: 2.2,
+    color: COLORS.text,
   });
   doc.moveDown(0.42);
   resetTextColumn(doc);
 }
 
 function renderListItem(doc, block) {
-  const text = cleanInline(block.text);
-  if (!text) return;
+  if (!cleanInline(block.text)) return;
 
   ensureSpace(doc, 24);
   const x = doc.page.margins.left;
@@ -301,9 +417,10 @@ function renderListItem(doc, block) {
     lineBreak: false,
   });
   doc.y = y;
-  doc.text(text, textX, y, {
+  renderInlineText(doc, block.text, textX, y, {
     width: contentWidth(doc) - markerWidth - gap,
     lineGap: 2.2,
+    color: COLORS.text,
   });
   doc.moveDown(0.18);
   resetTextColumn(doc);
