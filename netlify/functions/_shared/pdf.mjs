@@ -169,6 +169,10 @@ function contentWidth(doc) {
   return doc.page.width - doc.page.margins.left - doc.page.margins.right;
 }
 
+function resetTextColumn(doc) {
+  doc.x = doc.page.margins.left;
+}
+
 function ensureSpace(doc, height) {
   const bottom = doc.page.height - doc.page.margins.bottom;
   if (doc.y + height > bottom) doc.addPage();
@@ -207,8 +211,13 @@ function renderHeading(doc, block, state) {
   if (block.level === 1 && state.topHeadingCount === 0) {
     ensureSpace(doc, 42);
     doc.font("Helvetica-Bold").fontSize(19).fillColor(COLORS.title);
-    doc.text(text, { align: "center", lineGap: 1 });
+    doc.text(text, doc.page.margins.left, doc.y, {
+      width: contentWidth(doc),
+      align: "center",
+      lineGap: 1,
+    });
     doc.moveDown(0.25);
+    resetTextColumn(doc);
     state.topHeadingCount += 1;
     return;
   }
@@ -216,8 +225,13 @@ function renderHeading(doc, block, state) {
   if (block.level === 1 && state.topHeadingCount === 1) {
     ensureSpace(doc, 48);
     doc.font("Helvetica-Bold").fontSize(16).fillColor(COLORS.teal);
-    doc.text(text, { align: "center", lineGap: 1 });
+    doc.text(text, doc.page.margins.left, doc.y, {
+      width: contentWidth(doc),
+      align: "center",
+      lineGap: 1,
+    });
     drawSubtitleRule(doc);
+    resetTextColumn(doc);
     state.topHeadingCount += 1;
     return;
   }
@@ -226,7 +240,10 @@ function renderHeading(doc, block, state) {
     ensureSpace(doc, 54);
     doc.moveDown(0.75);
     doc.font("Helvetica-Bold").fontSize(15).fillColor(COLORS.teal);
-    doc.text(text, { lineGap: 1 });
+    doc.text(text, doc.page.margins.left, doc.y, {
+      width: contentWidth(doc),
+      lineGap: 1,
+    });
     const y = doc.y + 3;
     doc
       .save()
@@ -237,14 +254,19 @@ function renderHeading(doc, block, state) {
       .stroke()
       .restore();
     doc.y = y + 8;
+    resetTextColumn(doc);
     return;
   }
 
   ensureSpace(doc, 36);
   doc.moveDown(0.45);
   doc.font("Helvetica-Bold").fontSize(block.level === 3 ? 12.4 : 11.2).fillColor(COLORS.title);
-  doc.text(text, { lineGap: 1 });
+  doc.text(text, doc.page.margins.left, doc.y, {
+    width: contentWidth(doc),
+    lineGap: 1,
+  });
   doc.moveDown(0.25);
+  resetTextColumn(doc);
 }
 
 function renderParagraph(doc, block) {
@@ -253,11 +275,13 @@ function renderParagraph(doc, block) {
 
   ensureSpace(doc, 28);
   doc.font("Helvetica").fontSize(10.5).fillColor(COLORS.text);
-  doc.text(text, {
+  doc.text(text, doc.page.margins.left, doc.y, {
+    width: contentWidth(doc),
     align: "left",
     lineGap: 2.2,
   });
   doc.moveDown(0.42);
+  resetTextColumn(doc);
 }
 
 function renderListItem(doc, block) {
@@ -265,17 +289,24 @@ function renderListItem(doc, block) {
   if (!text) return;
 
   ensureSpace(doc, 24);
-  const x = doc.x;
+  const x = doc.page.margins.left;
   const y = doc.y;
   const markerWidth = block.marker.length > 1 ? 24 : 16;
+  const gap = 6;
+  const textX = x + markerWidth + gap;
   doc.font("Helvetica").fontSize(10.5).fillColor(COLORS.text);
-  doc.text(block.marker, x, y, { width: markerWidth });
+  doc.text(block.marker, x, y, {
+    width: markerWidth,
+    align: "right",
+    lineBreak: false,
+  });
   doc.y = y;
-  doc.text(text, x + markerWidth, y, {
-    width: contentWidth(doc) - markerWidth,
+  doc.text(text, textX, y, {
+    width: contentWidth(doc) - markerWidth - gap,
     lineGap: 2.2,
   });
   doc.moveDown(0.18);
+  resetTextColumn(doc);
 }
 
 function addFooters(doc) {
