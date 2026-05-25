@@ -28,6 +28,7 @@ const el = {
   newCaseButton: document.querySelector("#newCaseButton"),
   codexBriefingButton: document.querySelector("#codexBriefingButton"),
   aiDraftButton: document.querySelector("#aiDraftButton"),
+  pdfButton: document.querySelector("#pdfButton"),
   reloadButton: document.querySelector("#reloadButton"),
   deleteCaseButton: document.querySelector("#deleteCaseButton"),
   saveButton: document.querySelector("#saveButton"),
@@ -709,6 +710,56 @@ async function generateAiDraft() {
   }
 }
 
+function triggerDownload(downloadUrl, fileName) {
+  const link = document.createElement("a");
+  link.href = downloadUrl;
+  link.download = fileName || "";
+  link.rel = "noopener";
+  document.body.append(link);
+  link.click();
+  link.remove();
+}
+
+async function createPdf() {
+  if (!state.caseId) {
+    setStatus("Kein Fall gewaehlt", "error");
+    window.alert("Bitte zuerst links einen Fall auswaehlen.");
+    return;
+  }
+
+  if (state.dirty) {
+    const shouldSave = window.confirm("Das Dokument hat ungespeicherte Aenderungen. Erst speichern und dann das PDF anlegen?");
+    if (!shouldSave) return;
+    await saveFile();
+    if (state.dirty) return;
+  }
+
+  el.pdfButton.disabled = true;
+  setStatus("PDF erstellen", "idle");
+
+  try {
+    const data = await requestJson("/api/pdf", {
+      method: "POST",
+      body: JSON.stringify({ caseId: state.caseId }),
+    });
+
+    await loadCases(el.folderSearch.value);
+    if (state.caseId) {
+      const filesData = await requestJson(`/api/files?caseId=${encodeURIComponent(state.caseId)}`);
+      state.files = filesData.files;
+      renderFiles();
+    }
+    triggerDownload(data.downloadUrl, data.fileName);
+    setStatus("PDF erstellt", "saved");
+  } catch (error) {
+    console.error(error);
+    setStatus("PDF-Fehler", "error");
+    window.alert(error.message);
+  } finally {
+    el.pdfButton.disabled = false;
+  }
+}
+
 function showConflictDialog() {
   return new Promise((resolve) => {
     el.conflictDialog.addEventListener(
@@ -910,6 +961,7 @@ el.folderSearch.addEventListener("input", debouncedCaseSearch);
 el.newCaseButton.addEventListener("click", openNewCaseDialog);
 el.codexBriefingButton.addEventListener("click", () => prepareCodexBriefing().catch(showFatal));
 el.aiDraftButton.addEventListener("click", () => generateAiDraft().catch(showFatal));
+el.pdfButton.addEventListener("click", () => createPdf().catch(showFatal));
 el.deleteCaseButton.addEventListener("click", () => deleteCurrentCase().catch(showFatal));
 el.newCaseForm.addEventListener("submit", (event) => createCase(event).catch(showFatal));
 el.cancelNewCaseButton.addEventListener("click", () => el.newCaseDialog.close());

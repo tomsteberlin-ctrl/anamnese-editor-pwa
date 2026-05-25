@@ -72,6 +72,23 @@ export function normalizeMarkdownPath(value) {
   return clean;
 }
 
+export function normalizeContentFilePath(value, { extensions = [] } = {}) {
+  const { contentRoot } = getRepositoryConfig({ allowMissingToken: true });
+  const clean = String(value || "").replaceAll("\\", "/").trim().replace(/^\/+/, "");
+  ensureSafeParts(clean);
+
+  if (!clean.startsWith(`${contentRoot}/`)) {
+    throw new ClientError("Nur Dateien im Content-Ordner koennen gelesen werden.");
+  }
+
+  const allowedExtensions = extensions.map((extension) => String(extension).toLowerCase());
+  if (allowedExtensions.length && !allowedExtensions.some((extension) => clean.toLowerCase().endsWith(extension))) {
+    throw new ClientError("Dieser Dateityp kann hier nicht gelesen werden.");
+  }
+
+  return clean;
+}
+
 export async function githubRequest(endpoint, options = {}) {
   const { owner, repo, token } = getRepositoryConfig();
   const response = await fetch(`${GITHUB_API}${endpoint}`, {
@@ -163,6 +180,24 @@ export async function readMarkdownFile(repoPath) {
   };
 }
 
+export async function readRepositoryFile(repoPath, { extensions = [] } = {}) {
+  const { owner, repo, branch } = getRepositoryConfig();
+  const cleanPath = normalizeContentFilePath(repoPath, { extensions });
+  const encodedPath = encodePath(cleanPath);
+  const query = new URLSearchParams({ ref: branch });
+  const data = await githubRequest(`/repos/${owner}/${repo}/contents/${encodedPath}?${query.toString()}`);
+  if (Array.isArray(data) || data.type !== "file") {
+    throw new ClientError("Der angefragte Pfad ist keine Datei.", 400);
+  }
+  return {
+    name: data.name,
+    path: data.path,
+    sha: data.sha,
+    size: data.size,
+    contentBase64: String(data.content || "").replace(/\s/g, ""),
+  };
+}
+
 export async function updateMarkdownFile(repoPath, content, sha) {
   const { owner, repo, branch } = getRepositoryConfig();
   const cleanPath = normalizeMarkdownPath(repoPath);
@@ -238,16 +273,35 @@ async function createTreeCommit(tree, message) {
 }
 
 export async function createFilesCommit(files, message) {
-  const tree = files.map((file) => {
+  const { owner, repo } = getRepositoryConfig();
+  const tree = await Promise.all(files.map(async (file) => {
     const cleanPath = String(file.path || "").replaceAll("\\", "/").trim().replace(/^\/+/, "");
     ensureSafeParts(cleanPath);
+
+    if (file.contentBase64 || Buffer.isBuffer(file.content)) {
+      const base64 = file.contentBase64 || Buffer.from(file.content).toString("base64");
+      const blob = await githubRequest(`/repos/${owner}/${repo}/git/blobs`, {
+        method: "POST",
+        body: {
+          content: base64,
+          encoding: "base64",
+        },
+      });
+      return {
+        path: cleanPath,
+        mode: "100644",
+        type: "blob",
+        sha: blob.sha,
+      };
+    }
+
     return {
       path: cleanPath,
       mode: "100644",
       type: "blob",
       content: String(file.content ?? ""),
     };
-  });
+  }));
 
   return createTreeCommit(tree, message);
 }

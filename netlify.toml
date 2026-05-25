@@ -5,6 +5,8 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+  external_node_modules = ["pdfkit"]
+  included_files = ["netlify/functions/_shared/assets/**"]
 
 [build.environment]
   NODE_VERSION = "20"

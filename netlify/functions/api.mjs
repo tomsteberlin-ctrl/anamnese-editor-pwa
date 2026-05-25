@@ -6,11 +6,14 @@ import {
   getRepositoryConfig,
   listDirectory,
   normalizeCaseId,
+  normalizeContentFilePath,
   normalizeMarkdownPath,
   readJsonFile,
   readMarkdownFile,
+  readRepositoryFile,
   updateMarkdownFile,
 } from "./_shared/github.mjs";
+import { buildPdfFileName, renderConceptPdf } from "./_shared/pdf.mjs";
 
 const JSON_HEADERS = {
   "Content-Type": "application/json; charset=utf-8",
@@ -661,6 +664,106 @@ async function handleCreateBriefing(req) {
   });
 }
 
+function encodeDownloadFilename(fileName) {
+  const fallback = String(fileName || "download.pdf")
+    .replace(/["\\]/g, "")
+    .replace(/[^\x20-\x7E]/g, "_");
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(fileName || "download.pdf")}`;
+}
+
+function contentTypeForFile(fileName) {
+  const lower = String(fileName || "").toLowerCase();
+  if (lower.endsWith(".pdf")) return "application/pdf";
+  if (lower.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  return "application/octet-stream";
+}
+
+function touchMetaFileList(meta, fileName, bytes, sourceName) {
+  const now = new Date().toISOString();
+  const files = Array.isArray(meta.files) ? [...meta.files] : [];
+  const index = files.findIndex((file) => file?.name === fileName);
+  const nextFile = {
+    ...(index >= 0 ? files[index] : {}),
+    name: fileName,
+    sourceName,
+    bytes,
+    updatedAt: now,
+  };
+
+  if (index >= 0) {
+    files[index] = nextFile;
+  } else {
+    files.push(nextFile);
+  }
+
+  return {
+    ...meta,
+    updatedAt: now,
+    files,
+  };
+}
+
+async function handleCreatePdf(req) {
+  const body = await req.json().catch(() => {
+    throw new ClientError("Ungueltige JSON-Anfrage.");
+  });
+
+  const caseId = normalizeCaseId(body.caseId);
+  const {
+    contentRoot,
+    meta,
+    currentConcept,
+  } = await readCaseContext(caseId);
+
+  const fileName = buildPdfFileName(meta, caseId);
+  const pdfPath = `${contentRoot}/${caseId}/${fileName}`;
+  const metaPath = `${contentRoot}/${caseId}/meta.json`;
+  const pdfBuffer = await renderConceptPdf({
+    markdown: currentConcept.content,
+    meta,
+    caseId,
+  });
+  const nextMeta = touchMetaFileList(meta, fileName, pdfBuffer.length, "PDF-Export");
+
+  const result = await createFilesCommit(
+    [
+      { path: pdfPath, contentBase64: pdfBuffer.toString("base64") },
+      { path: metaPath, content: `${JSON.stringify(nextMeta, null, 2)}\n` },
+    ],
+    `Create PDF for ${caseId} via Anamnese Editor`,
+  );
+
+  return json({
+    ok: true,
+    caseId,
+    path: pdfPath,
+    fileName,
+    bytes: pdfBuffer.length,
+    downloadUrl: `/api/download?path=${encodeURIComponent(pdfPath)}`,
+    ...result,
+  }, 201);
+}
+
+async function handleDownload(url) {
+  const filePath = normalizeContentFilePath(url.searchParams.get("path"), {
+    extensions: [".pdf", ".docx"],
+  });
+  const file = await readRepositoryFile(filePath, {
+    extensions: [".pdf", ".docx"],
+  });
+  const buffer = Buffer.from(file.contentBase64, "base64");
+
+  return new Response(buffer, {
+    status: 200,
+    headers: {
+      "Content-Type": contentTypeForFile(file.name),
+      "Content-Length": String(buffer.length),
+      "Content-Disposition": encodeDownloadFilename(file.name),
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
 export default async (req) => {
   try {
     const url = new URL(req.url);
@@ -675,6 +778,8 @@ export default async (req) => {
     if (req.method === "DELETE" && path === "/api/case") return await handleDeleteCase(req);
     if (req.method === "POST" && path === "/api/draft") return await handleGenerateDraft(req);
     if (req.method === "POST" && path === "/api/briefing") return await handleCreateBriefing(req);
+    if (req.method === "POST" && path === "/api/pdf") return await handleCreatePdf(req);
+    if (req.method === "GET" && path === "/api/download") return await handleDownload(url);
 
     return json({ error: "Route nicht gefunden." }, 404);
   } catch (error) {
@@ -688,5 +793,5 @@ export default async (req) => {
 };
 
 export const config = {
-  path: ["/api/config", "/api/cases", "/api/files", "/api/file", "/api/case", "/api/draft", "/api/briefing"],
+  path: ["/api/config", "/api/cases", "/api/files", "/api/file", "/api/case", "/api/draft", "/api/briefing", "/api/pdf", "/api/download"],
 };
